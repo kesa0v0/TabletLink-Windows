@@ -5,8 +5,27 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TabletLink_WindowsApp"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Height="150" Width="300" ResizeMode="NoResize" WindowStyle="None" Background="White">
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
+        <!-- 툴바 (창 접기 버튼) -->
+        <DockPanel Grid.Row="0" Background="#DDDDDD" Height="30">
+            <TextBlock Text="Connection Manager" FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,0,0" />
+            <Button Content="_" Width="30" Height="30" Click="MinimizeWindow" HorizontalAlignment="Right" />
+        </DockPanel>
+
+        <!-- 메인 UI -->
+        <StackPanel Grid.Row="1" Margin="10" Visibility="Visible" x:Name="MainPanel">
+            <TextBox x:Name="IdInput" Width="200" Margin="0,0,0,10" Text="Enter ID" />
+            <Button x:Name="ConnectButton" Content="Connect" Width="200" Click="Connect_Click" />
+            <TextBlock x:Name="StatusText" Text="Disconnected" Foreground="Red" Margin="0,10,0,0" />
+        </StackPanel>
+
+        <!-- 설정 버튼 -->
+        <Button Grid.Row="1" Content="⚙" FontSize="16" HorizontalAlignment="Right" VerticalAlignment="Top" Width="30" Height="30" Click="OpenSettings" />
     </Grid>
 </Window>
