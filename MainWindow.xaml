@@ -5,9 +5,11 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TabletLink_WindowsApp"
         mc:Ignorable="d"
-        Height="150" Width="300" ResizeMode="NoResize" WindowStyle="None" Background="White">
+        Height="600" Width="1200" ResizeMode="NoResize" WindowStyle="None" Background="White">
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -17,6 +19,9 @@
             <TextBlock Text="Connection Manager" FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,0,0" />
             <Button Content="_" Width="30" Height="30" Click="MinimizeWindow" HorizontalAlignment="Right" />
         </DockPanel>
+        
+        <!-- 종료 버튼  -->
+        <Button Grid.Row="0" Content="X" Width="30" Height="30" Click="CloseWindow" HorizontalAlignment="Right" />
 
         <!-- 메인 UI -->
         <StackPanel Grid.Row="1" Margin="10" Visibility="Visible" x:Name="MainPanel">
@@ -27,5 +32,8 @@
 
         <!-- 설정 버튼 -->
         <Button Grid.Row="1" Content="⚙" FontSize="16" HorizontalAlignment="Right" VerticalAlignment="Top" Width="30" Height="30" Click="OpenSettings" />
+
+
+        <Image Name="CaptureImage" Grid.Row="2" Width="800" Height="400" />
     </Grid>
 </Window>

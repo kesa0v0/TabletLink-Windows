@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "TabletLink_WindowsApp": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}
