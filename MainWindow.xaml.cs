@@ -18,9 +18,17 @@ namespace TabletLink_WindowsApp
         [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr TestDLL();
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct FrameData
+        {
+            public IntPtr data;
+            public int width;
+            public int height;
+        }
+
         // Callback 델리게이트 정의
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void FrameCallback(IntPtr data, int width, int height);
+        public delegate void FrameCallback(FrameData frameData);
         private static FrameCallback? frameCallbackInstance;
 
         private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
@@ -123,22 +131,24 @@ namespace TabletLink_WindowsApp
 
 
         // Callback 함수 구현
-        void frameCallback(IntPtr data, int width, int height)
+        void frameCallback(FrameData frameData)
         {
-            byte[] frameData = new byte[width * height * 4]; // RGBA 포맷 가정
-            Marshal.Copy(data, frameData, 0, frameData.Length);
+
+            long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             // 네이티브 측 타임스탬프 읽기
-            long nativeTimestamp = BitConverter.ToInt64(frameData, 0);
-            long currentTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            byte[] frameDataArray = new byte[frameData.width * frameData.height * 4];
+            Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
 
-            long delay = currentTimestamp - nativeTimestamp;
+            long nativeTimestamp = BitConverter.ToInt64(frameDataArray, 0);
+            long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
+
+            Console.WriteLine($"Native Timestamp: {nativeTimestamp}");
+            Console.WriteLine($"Current Time: {currentTime}");
             Console.WriteLine($"Frame Delay: {delay} ms");
 
             // FPS 카운트 증가
             frameCount++;
-
-            // 1초마다 FPS 계산 후 리셋
             if (stopwatch.ElapsedMilliseconds >= 1000)
             {
                 UpdateStatusText($"FPS: {frameCount}");
@@ -146,10 +156,10 @@ namespace TabletLink_WindowsApp
                 stopwatch.Restart();
             }
 
-            // UI 쓰레드에서 이미지를 업데이트
+            // UI 쓰레드에서 이미지 업데이트
             this.Dispatcher.Invoke(() =>
             {
-                UpdateCaptureImage(frameData, width, height);
+                UpdateCaptureImage(frameDataArray, frameData.width, frameData.height);
             });
         }
     }
