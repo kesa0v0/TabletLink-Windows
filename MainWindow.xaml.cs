@@ -1,48 +1,42 @@
-﻿using System.Text;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
-using System.Runtime.InteropServices;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+
+
 
 namespace TabletLink_WindowsApp
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
-        // Callback 델리게이트 정의
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void FrameCallback(IntPtr data, int width, int height);
-
-        [DllImport("ScreenCaptureLib.dll")]
+        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
         public static extern void StartCapture(FrameCallback frameCallback);
-
-        [DllImport("ScreenCaptureLib.dll")]
+        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
         public static extern void StopCapture();
-
         [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr TestDLL();
 
+        // Callback 델리게이트 정의
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void FrameCallback(IntPtr data, int width, int height);
+        private static FrameCallback? frameCallbackInstance;
 
+        private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
+        private int frameCount = 0; // 초당 프레임 수 카운트
+        
 
-        private WriteableBitmap bitmap;
+        private WriteableBitmap? bitmap;
         public bool isCapturing = false;
 
-
-        private FrameCallback frameCallbackDelegate;
 
         public MainWindow()
         {
             InitializeComponent();
+            stopwatch.Start(); // 시간 측정 시작
 
-            frameCallbackDelegate = new FrameCallback(frameCallback);
+            frameCallbackInstance = new FrameCallback(frameCallback);
 
         }
 
@@ -68,6 +62,11 @@ namespace TabletLink_WindowsApp
 
         }
 
+        public void Window_MouseLeftButtonDown(object sender, RoutedEventArgs e)
+        {
+            this.DragMove();
+        }
+
         // 버튼 입력
         private void Connect_Click(object sender, RoutedEventArgs e)
         {
@@ -76,15 +75,15 @@ namespace TabletLink_WindowsApp
             string? buttonText = button.Content.ToString();
             UpdateStatusText($"Button {buttonName} clicked: {buttonText}");
 
-            if (isCapturing)
-            {
-                StopCapture();
-                isCapturing = false;
-            }
-            else
+            if (!isCapturing)
             {
                 StartCapture();
                 isCapturing = true;
+            }
+            else
+            {
+                StopCapture();
+                isCapturing = false;
             }
         }
 
@@ -118,7 +117,7 @@ namespace TabletLink_WindowsApp
 
 
             Console.WriteLine("StartCapture");
-            StartCapture(frameCallbackDelegate);
+            StartCapture(frameCallbackInstance);
             Console.WriteLine("StartCapture called");
         }
 
@@ -129,7 +128,23 @@ namespace TabletLink_WindowsApp
             byte[] frameData = new byte[width * height * 4]; // RGBA 포맷 가정
             Marshal.Copy(data, frameData, 0, frameData.Length);
 
-            //Console.WriteLine($"Frame captured: {width}x{height}");
+            // 네이티브 측 타임스탬프 읽기
+            long nativeTimestamp = BitConverter.ToInt64(frameData, 0);
+            long currentTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            long delay = currentTimestamp - nativeTimestamp;
+            Console.WriteLine($"Frame Delay: {delay} ms");
+
+            // FPS 카운트 증가
+            frameCount++;
+
+            // 1초마다 FPS 계산 후 리셋
+            if (stopwatch.ElapsedMilliseconds >= 1000)
+            {
+                UpdateStatusText($"FPS: {frameCount}");
+                frameCount = 0;
+                stopwatch.Restart();
+            }
 
             // UI 쓰레드에서 이미지를 업데이트
             this.Dispatcher.Invoke(() =>

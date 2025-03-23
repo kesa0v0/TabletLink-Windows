@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TabletLink_WindowsApp"
         mc:Ignorable="d"
-        Height="600" Width="1200" ResizeMode="NoResize" WindowStyle="None" Background="White">
+        Height="600" Width="1200" ResizeMode="NoResize" WindowStyle="None" Background="White" MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
