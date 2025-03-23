@@ -43,6 +43,7 @@ namespace TabletLink_WindowsApp
             InitializeComponent();
 
             frameCallbackDelegate = new FrameCallback(frameCallback);
+
         }
 
         public void UpdateStatusText(string text)
@@ -90,11 +91,18 @@ namespace TabletLink_WindowsApp
         // 캡처 데이터를 화면에 업데이트하는 함수
         private void UpdateCaptureImage(byte[] frameData, int width, int height)
         {
+            //Console.WriteLine($"Frame captured: {width}x{height}");
             if (bitmap == null || bitmap.PixelWidth != width || bitmap.PixelHeight != height)
             {
                 // WriteableBitmap 초기화
+                Console.WriteLine("Creating new WriteableBitmap");
                 bitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
                 CaptureImage.Source = bitmap;
+            }
+            if (frameData.Length != width * height * 4)
+            {
+                Console.WriteLine($"Unexpected frame data size: {frameData.Length}. Expected: {width * height * 4}");
+                return;
             }
 
             bitmap.Lock();
@@ -121,7 +129,7 @@ namespace TabletLink_WindowsApp
             byte[] frameData = new byte[width * height * 4]; // RGBA 포맷 가정
             Marshal.Copy(data, frameData, 0, frameData.Length);
 
-            Console.WriteLine($"Frame captured: {width}x{height}");
+            //Console.WriteLine($"Frame captured: {width}x{height}");
 
             // UI 쓰레드에서 이미지를 업데이트
             this.Dispatcher.Invoke(() =>
