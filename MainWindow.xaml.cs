@@ -24,6 +24,7 @@ namespace TabletLink_WindowsApp
             public IntPtr data;
             public int width;
             public int height;
+            public long timestamp;
         }
 
         // Callback 델리게이트 정의
@@ -140,12 +141,12 @@ namespace TabletLink_WindowsApp
             byte[] frameDataArray = new byte[frameData.width * frameData.height * 4];
             Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
 
-            long nativeTimestamp = BitConverter.ToInt64(frameDataArray, 0);
+            long nativeTimestamp = frameData.timestamp; // 네이티브 측 타임스탬프
             long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
 
-            Console.WriteLine($"Native Timestamp: {nativeTimestamp}");
-            Console.WriteLine($"Current Time: {currentTime}");
-            Console.WriteLine($"Frame Delay: {delay} ms");
+            //Console.WriteLine($"Native Timestamp: {nativeTimestamp}");
+            //Console.WriteLine($"Current Time: {currentTime}");
+            //Console.WriteLine($"Frame Delay: {delay} ms");
 
             // FPS 카운트 증가
             frameCount++;
