@@ -144,15 +144,11 @@ namespace TabletLink_WindowsApp
             long nativeTimestamp = frameData.timestamp; // 네이티브 측 타임스탬프
             long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
 
-            //Console.WriteLine($"Native Timestamp: {nativeTimestamp}");
-            //Console.WriteLine($"Current Time: {currentTime}");
-            //Console.WriteLine($"Frame Delay: {delay} ms");
-
             // FPS 카운트 증가
             frameCount++;
             if (stopwatch.ElapsedMilliseconds >= 1000)
             {
-                UpdateStatusText($"FPS: {frameCount}");
+                UpdateStatusText($"FPS: {frameCount}, delay: {delay}");
                 frameCount = 0;
                 stopwatch.Restart();
             }

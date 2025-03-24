@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.13.35913.81
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TabletLink_WindowsApp", "TabletLink_WindowsApp.csproj", "{08F41CC6-5440-47F2-8F2A-97A96B3FEAF9}"
+	ProjectSection(ProjectDependencies) = postProject
+		{95824F1E-4506-40C4-B567-D82C57637C7D} = {95824F1E-4506-40C4-B567-D82C57637C7D}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ScreenCaptureLib", "..\ScreenCaptureLib\ScreenCaptureLib.vcxproj", "{95824F1E-4506-40C4-B567-D82C57637C7D}"
 EndProject
