@@ -56,6 +56,7 @@ namespace TabletLink_WindowsApp
                 this.StatusText.Text = text;
             });
         }
+
         public void CloseWindow(object sender, RoutedEventArgs e)
         {
             this.Close();
