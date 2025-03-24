@@ -15,13 +15,12 @@ namespace TabletLink_WindowsApp
         public static extern void StartCapture(FrameCallback frameCallback);
         [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
         public static extern void StopCapture();
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr TestDLL();
 
         [StructLayout(LayoutKind.Sequential)]
         public struct FrameData
         {
             public IntPtr data;
+            public int size;
             public int width;
             public int height;
             public long timestamp;
@@ -131,13 +130,12 @@ namespace TabletLink_WindowsApp
             Console.WriteLine("StartCapture called");
         }
 
-
         // Callback 함수 구현
         void frameCallback(FrameData frameData)
         {
-
+            // C# 현재 시간 측정
             long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
+            
             // 네이티브 측 타임스탬프 읽기
             byte[] frameDataArray = new byte[frameData.width * frameData.height * 4];
             Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
