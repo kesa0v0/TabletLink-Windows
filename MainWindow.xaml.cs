@@ -4,7 +4,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-
+using WebRTC;
 
 
 namespace TabletLink_WindowsApp
@@ -16,7 +16,6 @@ namespace TabletLink_WindowsApp
         public MainWindow()
         {
             InitializeComponent();
-            stopwatch.Start(); // 시간 측정 시작
 
             frameCallbackInstance = new FrameCallback(frameCallback);
 
@@ -62,12 +61,12 @@ namespace TabletLink_WindowsApp
 
             if (!isCapturing)
             {
-                StartCapture();
+                //StartCapture();
                 isCapturing = true;
             }
             else
             {
-                StopCapture();
+                //StopCapture();
                 isCapturing = false;
             }
         }
@@ -101,8 +100,7 @@ namespace TabletLink_WindowsApp
         {
             UpdateStatusText("Capturing started...");
 
-
-            Console.WriteLine("StartCapture");
+            frameCallbackInstance ??= new FrameCallback(frameCallback);
             StartCapture(frameCallbackInstance);
             Console.WriteLine("StartCapture called");
         }
@@ -127,5 +125,10 @@ namespace TabletLink_WindowsApp
             });
         }
         #endregion
+    }
+
+    class WebRTCServer
+    {
+
     }
 }
