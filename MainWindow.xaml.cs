@@ -11,33 +11,7 @@ namespace TabletLink_WindowsApp
 {
     public partial class MainWindow : Window
     {
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StartCapture(FrameCallback frameCallback);
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StopCapture();
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct FrameData
-        {
-            public IntPtr data;
-            public int size;
-            public int width;
-            public int height;
-            public long timestamp;
-        }
-
-        // Callback 델리게이트 정의
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void FrameCallback(FrameData frameData);
-        private static FrameCallback? frameCallbackInstance;
-
-        private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
-        private int frameCount = 0; // 초당 프레임 수 카운트
-        
-
-        private WriteableBitmap? bitmap;
         public bool isCapturing = false;
-
 
         public MainWindow()
         {
@@ -47,6 +21,8 @@ namespace TabletLink_WindowsApp
             frameCallbackInstance = new FrameCallback(frameCallback);
 
         }
+
+        #region UI
 
         public void UpdateStatusText(string text)
         {
@@ -96,28 +72,29 @@ namespace TabletLink_WindowsApp
             }
         }
 
-        // 캡처 데이터를 화면에 업데이트하는 함수
-        private void UpdateCaptureImage(byte[] frameData, int width, int height)
-        {
-            //Console.WriteLine($"Frame captured: {width}x{height}");
-            if (bitmap == null || bitmap.PixelWidth != width || bitmap.PixelHeight != height)
-            {
-                // WriteableBitmap 초기화
-                Console.WriteLine("Creating new WriteableBitmap");
-                bitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-                CaptureImage.Source = bitmap;
-            }
-            if (frameData.Length != width * height * 4)
-            {
-                Console.WriteLine($"Unexpected frame data size: {frameData.Length}. Expected: {width * height * 4}");
-                return;
-            }
+        #endregion
 
-            bitmap.Lock();
-            Marshal.Copy(frameData, 0, bitmap.BackBuffer, frameData.Length);
-            bitmap.AddDirtyRect(new Int32Rect(0, 0, width, height));
-            bitmap.Unlock();
+        #region DLL
+
+        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
+        public static extern void StartCapture(FrameCallback frameCallback);
+        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
+        public static extern void StopCapture();
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct FrameData
+        {
+            public IntPtr data;
+            public int size;
+            public int width;
+            public int height;
+            public long timestamp;
         }
+
+        // Callback 델리게이트 정의
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate void FrameCallback(FrameData frameData);
+        private static FrameCallback? frameCallbackInstance;
 
 
         private void StartCapture()
@@ -143,20 +120,12 @@ namespace TabletLink_WindowsApp
             long nativeTimestamp = frameData.timestamp; // 네이티브 측 타임스탬프
             long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
 
-            // FPS 카운트 증가
-            frameCount++;
-            if (stopwatch.ElapsedMilliseconds >= 1000)
-            {
-                UpdateStatusText($"FPS: {frameCount}, delay: {delay}");
-                frameCount = 0;
-                stopwatch.Restart();
-            }
-
             // UI 쓰레드에서 이미지 업데이트
             this.Dispatcher.Invoke(() =>
             {
-                UpdateCaptureImage(frameDataArray, frameData.width, frameData.height);
+                // send data to Android with Wi-fi Direct and WebRTC
             });
         }
+        #endregion
     }
 }
