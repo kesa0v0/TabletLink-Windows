@@ -5,6 +5,11 @@ using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
+
 
 namespace TabletLink_WindowsApp
 {
@@ -17,6 +22,7 @@ namespace TabletLink_WindowsApp
             InitializeComponent();
 
             frameCallbackInstance = new FrameCallback(frameCallback);
+            UDPServer server = new UDPServer();
 
         }
 
@@ -60,6 +66,10 @@ namespace TabletLink_WindowsApp
 
             if (!isCapturing)
             {
+                Task.Factory.StartNew(() =>
+                {
+                    server.StartServer();
+                });
                 //StartCapture();
                 isCapturing = true;
             }
@@ -71,6 +81,7 @@ namespace TabletLink_WindowsApp
         }
 
         #endregion
+
 
         #region DLL
 
@@ -109,7 +120,7 @@ namespace TabletLink_WindowsApp
         {
             // C# 현재 시간 측정
             long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            
+
             // 네이티브 측 타임스탬프 읽기
             byte[] frameDataArray = new byte[frameData.width * frameData.height * 4];
             Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
@@ -124,10 +135,49 @@ namespace TabletLink_WindowsApp
             });
         }
         #endregion
-    }
 
-    class WebRTCServer
-    {
 
+        #region Network
+
+        UDPServer server = new UDPServer();
+
+        class UDPServer
+        {
+            public void StartServer()
+            {
+                IPAddress ip = IPAddress.Any;
+                UdpClient udpServer = new UdpClient(12345); // 포트 12345로 바인딩
+                IPEndPoint remoteEP = new IPEndPoint(ip, 0);
+
+                Console.WriteLine("UDP 서버 실행 중...");
+                Console.WriteLine($"IP:{ip}");
+                
+                try
+                {
+                    while (true)
+                    {
+                        byte[] receivedData = udpServer.Receive(ref remoteEP);
+                        string receivedMessage = Encoding.UTF8.GetString(receivedData);
+                        Console.WriteLine($"클라이언트({remoteEP.Address}): {receivedMessage}");
+
+                        // 응답 메시지 전송
+                        byte[] responseData = Encoding.UTF8.GetBytes("Hello from WPF!");
+                        udpServer.Send(responseData, responseData.Length, remoteEP);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.ToString());
+                }
+                finally
+                {
+                    udpServer.Close();
+                }
+
+                Console.ReadLine();
+            }
+        }
+
+        #endregion
     }
 }
