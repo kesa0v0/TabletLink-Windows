@@ -83,6 +83,7 @@ namespace TabletLink_WindowsApp
 
         public void SendData(byte[] data)
         {
+            Console.Write($"Data Sent");
             udpServer.Send(data, data.Length, targetIPEP);
         }
 
@@ -94,6 +95,8 @@ namespace TabletLink_WindowsApp
 
         public void CloseServer()
         {
+            if (!isRunning)
+                return;
             isRunning = false;
             if (receiveThread != null && receiveThread.IsAlive)
                 receiveThread?.Join();

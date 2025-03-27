@@ -5,10 +5,6 @@ using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
-using System.Threading.Tasks;
 using System.ComponentModel;
 
 
@@ -44,8 +40,8 @@ namespace TabletLink_WindowsApp
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            server.CloseServer();
-            StopCapture();
+            //server.CloseServer();
+            //StopCapture();
             base.OnClosing(e);
         }
 
@@ -74,14 +70,14 @@ namespace TabletLink_WindowsApp
 
             if (!isCapturing)
             {
-                server.StartServer();
-                StartCapture();
+                //server.StartServer();
+                CStartCapture();
                 isCapturing = true;
             }
             else
             {
-                server.CloseServer();
-                StopCapture();
+                //server.CloseServer();
+                //StopCapture();
                 isCapturing = false;
             }
         }
@@ -112,9 +108,9 @@ namespace TabletLink_WindowsApp
         private static FrameCallback? frameCallbackInstance;
 
 
-        private void StartCapture()
+        private void CStartCapture()
         {
-            UpdateStatusText("Capturing started...");
+            Console.WriteLine("Capturing started...");
 
             frameCallbackInstance ??= new FrameCallback(frameCallback);
             StartCapture(frameCallbackInstance);
@@ -157,7 +153,7 @@ namespace TabletLink_WindowsApp
             // UI 쓰레드에서 이미지 업데이트
             this.Dispatcher.Invoke(() =>
             {
-                server.SendData(StructToBytes(frameData));
+                //server.SendData(StructToBytes(frameData));
                 // send data to Android with Wi-fi Direct and WebRTC
             });
         }
