@@ -9,6 +9,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using System.ComponentModel;
 
 
 namespace TabletLink_WindowsApp
@@ -38,9 +39,14 @@ namespace TabletLink_WindowsApp
 
         public void CloseWindow(object sender, RoutedEventArgs e)
         {
-            server.CloseServer();
-
             this.Close();
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            server.CloseServer();
+            StopCapture();
+            base.OnClosing(e);
         }
 
         public void MinimizeWindow(object sender, RoutedEventArgs e)
@@ -69,12 +75,13 @@ namespace TabletLink_WindowsApp
             if (!isCapturing)
             {
                 server.StartServer();
-                //StartCapture();
+                StartCapture();
                 isCapturing = true;
             }
             else
             {
-                //StopCapture();
+                server.CloseServer();
+                StopCapture();
                 isCapturing = false;
             }
         }
@@ -114,6 +121,26 @@ namespace TabletLink_WindowsApp
             Console.WriteLine("StartCapture called");
         }
 
+        public static byte[] StructToBytes(FrameData frameData)
+        {
+            int size = Marshal.SizeOf(frameData);
+            byte[] bytes = new byte[size];
+            IntPtr ptr = Marshal.AllocHGlobal(size);
+
+            try
+            {
+                Marshal.StructureToPtr(frameData, ptr, false);
+                Marshal.Copy(ptr, bytes, 0, size);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
+
+            return bytes;
+        }
+
+
         // Callback 함수 구현
         void frameCallback(FrameData frameData)
         {
@@ -130,6 +157,7 @@ namespace TabletLink_WindowsApp
             // UI 쓰레드에서 이미지 업데이트
             this.Dispatcher.Invoke(() =>
             {
+                server.SendData(StructToBytes(frameData));
                 // send data to Android with Wi-fi Direct and WebRTC
             });
         }

@@ -16,9 +16,10 @@ namespace TabletLink_WindowsApp
         UdpClient udpServer;
         IPEndPoint myIPEP;
         IPEndPoint targetIPEP;
-        Thread ReceiveThread;
+        Thread receiveThread;
 
         private bool isMsgReceive;
+        private bool isRunning = true;
 
         public UDPServer()
         {
@@ -29,34 +30,30 @@ namespace TabletLink_WindowsApp
         public void StartServer()
         {
             Console.WriteLine("UDP 서버 실행 중...");
-            ReceiveThread = new Thread(ReceiveData);
-            ReceiveThread.IsBackground = true;
-            ReceiveThread.Start();
+            receiveThread = new Thread(ReceiveData);
+            receiveThread.IsBackground = true;
+            receiveThread.Start();
         }
 
         void ReceiveData()
         {
-            while (true)
+            while (isRunning)
             {
-                if (udpServer.Available > 0)
+                try
                 {
-                    try
+                    if (udpServer.Available > 0)
                     {
                         udpServer.BeginReceive(new AsyncCallback(ReceiveCallback), null);
-                        while (!isMsgReceive)
-                        {
-                            Thread.Sleep(10);
-                        }
                         isMsgReceive = false;
                     }
-                    catch (Exception e)
+                    else
                     {
-                        Console.WriteLine(e.ToString());
+                        Thread.Sleep(10);
                     }
                 }
-                else
+                catch (Exception e)
                 {
-                    Thread.Sleep(10);
+                    Console.WriteLine(e.ToString());
                 }
             }
             //try
@@ -84,7 +81,7 @@ namespace TabletLink_WindowsApp
             //evtRecieveData?.Invoke(receivedData);
         }
 
-        void SendData(byte[] data)
+        public void SendData(byte[] data)
         {
             udpServer.Send(data, data.Length, targetIPEP);
         }
@@ -95,10 +92,13 @@ namespace TabletLink_WindowsApp
         }
 
 
-        internal void CloseServer()
+        public void CloseServer()
         {
-            ReceiveThread?.Join();
+            isRunning = false;
+            if (receiveThread != null && receiveThread.IsAlive)
+                receiveThread?.Join();
             udpServer?.Close();
+            Console.WriteLine("Server Closing");
         }
     }
 }
