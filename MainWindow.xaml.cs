@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.ComponentModel;
 
 
 
@@ -34,7 +35,7 @@ namespace TabletLink_WindowsApp
 
         private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
         private int frameCount = 0; // 초당 프레임 수 카운트
-        
+
 
         private WriteableBitmap? bitmap;
         public bool isCapturing = false;
@@ -77,13 +78,18 @@ namespace TabletLink_WindowsApp
             this.DragMove();
         }
 
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            StopCapture();
+            base.OnClosing(e);
+        }
+
         // 버튼 입력
         private void Connect_Click(object sender, RoutedEventArgs e)
         {
             Button button = (Button)sender;
             string buttonName = button.Name;
             string? buttonText = button.Content.ToString();
-            UpdateStatusText($"Button {buttonName} clicked: {buttonText}");
 
             if (!isCapturing)
             {
@@ -135,6 +141,9 @@ namespace TabletLink_WindowsApp
         // Callback 함수 구현
         void frameCallback(FrameData frameData)
         {
+            if(isCapturing == false)
+                return;
+            
 
             long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -160,5 +169,6 @@ namespace TabletLink_WindowsApp
                 UpdateCaptureImage(frameDataArray, frameData.width, frameData.height);
             });
         }
+
     }
 }
