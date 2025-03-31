@@ -13,7 +13,7 @@ namespace TabletLink_WindowsApp
     public partial class MainWindow : Window
     {
         [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StartCapture(FrameCallback frameCallback);
+        public static extern void StartCapture(FrameCallback frameCallback, int frameWidth, int frameHeight, int frameRate);
         [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
         public static extern void StopCapture();
         [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.Cdecl)]
@@ -25,6 +25,9 @@ namespace TabletLink_WindowsApp
             public IntPtr data;
             public int width;
             public int height;
+            public int frameRate;
+
+            public int dataSize;
             public long timestamp;
         }
 
@@ -133,7 +136,7 @@ namespace TabletLink_WindowsApp
 
 
             Console.WriteLine("StartCapture");
-            StartCapture(frameCallbackInstance);
+            StartCapture(frameCallbackInstance, 1920, 1080, 60);
             Console.WriteLine("StartCapture called");
         }
 
