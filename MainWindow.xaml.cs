@@ -35,6 +35,7 @@ namespace TabletLink_WindowsApp
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate void FrameCallback(FrameData frameData);
         private static FrameCallback? frameCallbackInstance;
+        UDPServer server = new UDPServer();
 
         private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
         private int frameCount = 0; // 초당 프레임 수 카운트
@@ -96,50 +97,17 @@ namespace TabletLink_WindowsApp
 
             if (!isCapturing)
             {
-                StartCapture();
+                server.StartServer();
+                StartCapture(frameCallbackInstance, 1920, 1080, 30);
                 isCapturing = true;
             }
             else
             {
+                server.CloseServer();
                 StopCapture();
                 isCapturing = false;
             }
         }
-
-        // 캡처 데이터를 화면에 업데이트하는 함수
-        private void UpdateCaptureImage(byte[] frameData, int width, int height)
-        {
-            //Console.WriteLine($"Frame captured: {width}x{height}");
-            if (bitmap == null || bitmap.PixelWidth != width || bitmap.PixelHeight != height)
-            {
-                // WriteableBitmap 초기화
-                Console.WriteLine("Creating new WriteableBitmap");
-                bitmap = new WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-                CaptureImage.Source = bitmap;
-            }
-            if (frameData.Length != width * height * 4)
-            {
-                Console.WriteLine($"Unexpected frame data size: {frameData.Length}. Expected: {width * height * 4}");
-                return;
-            }
-
-            bitmap.Lock();
-            Marshal.Copy(frameData, 0, bitmap.BackBuffer, frameData.Length);
-            bitmap.AddDirtyRect(new Int32Rect(0, 0, width, height));
-            bitmap.Unlock();
-        }
-
-
-        private void StartCapture()
-        {
-            UpdateStatusText("Capturing started...");
-
-
-            Console.WriteLine("StartCapture");
-            StartCapture(frameCallbackInstance, 1920, 1080, 60);
-            Console.WriteLine("StartCapture called");
-        }
-
 
         // Callback 함수 구현
         void frameCallback(FrameData frameData)
@@ -169,7 +137,7 @@ namespace TabletLink_WindowsApp
             // UI 쓰레드에서 이미지 업데이트
             this.Dispatcher.Invoke(() =>
             {
-                UpdateCaptureImage(frameDataArray, frameData.width, frameData.height);
+
             });
         }
 

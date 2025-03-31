@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TabletLink_WindowsApp"
         mc:Ignorable="d"
-        Height="600" Width="1200" ResizeMode="NoResize" WindowStyle="None" Background="White" MouseLeftButtonDown="Window_MouseLeftButtonDown">
+        Height="200" Width="400" ResizeMode="NoResize" WindowStyle="None" Background="White" MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -32,8 +32,5 @@
 
         <!-- 설정 버튼 -->
         <Button Grid.Row="1" Content="⚙" FontSize="16" HorizontalAlignment="Right" VerticalAlignment="Top" Width="30" Height="30" Click="OpenSettings" />
-
-
-        <Image Name="CaptureImage" Grid.Row="2" Width="800" Height="400"  />
     </Grid>
 </Window>
