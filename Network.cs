@@ -69,6 +69,7 @@ namespace TabletLink_WindowsApp
         {
             myIPEP = new IPEndPoint(host, 0);
             udpServer = new UdpClient(port); // 포트 12345로 바인딩
+            targetIPEP = new IPEndPoint(IPAddress.Parse("127.0.0.1"), port); 
         }
 
 
@@ -101,20 +102,6 @@ namespace TabletLink_WindowsApp
                     Console.WriteLine(e.ToString());
                 }
             }
-            //try
-            //{
-            //    while (true)
-            //    {
-            //        byte[] receivedData = udpServer.Receive(ref remoteEP);
-            //        string receivedMessage = Encoding.UTF8.GetString(receivedData);
-            //        Console.WriteLine($"클라이언트({remoteEP.Address}): {receivedMessage}");
-
-            //        // 응답 메시지 전송
-            //        byte[] responseData = Encoding.UTF8.GetBytes("Hello from WPF!");
-            //        udpServer.Send(responseData, responseData.Length, remoteEP);
-            //    }
-            //}
-
         }
 
         void ReceiveCallback(IAsyncResult ar)
@@ -134,6 +121,7 @@ namespace TabletLink_WindowsApp
                 {
                     Task.Run(async () =>
                     await udpServer.SendAsync(data, data.Length, targetIPEP));
+                    Console.WriteLine($"Send Data to {targetIPEP.Address}");
                 }
                 catch (Exception e)
                 {
