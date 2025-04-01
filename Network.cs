@@ -5,9 +5,52 @@ using System.Net.Sockets;
 using System.Net;
 using System.Text;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
+using System.Threading;
 
 namespace TabletLink_WindowsApp
 {
+    public class TaskQueue
+    {
+        private readonly BlockingCollection<Action> _taskQueue = new BlockingCollection<Action>();
+        private readonly Thread _workerThread;
+
+        public TaskQueue()
+        {
+            _workerThread = new Thread(ProcessQueue)
+            {
+                IsBackground = true
+            };
+            _workerThread.Start();
+        }
+
+        public void Enqueue(Action task)
+        {
+            _taskQueue.Add(task);
+        }
+
+        private void ProcessQueue()
+        {
+            foreach (var task in _taskQueue.GetConsumingEnumerable())
+            {
+                try
+                {
+                    task();
+                }
+                catch (Exception ex)
+                {
+                    // 예외 처리 로직
+                    Console.WriteLine($"Task execution error: {ex.Message}");
+                }
+            }
+        }
+
+        public void Stop()
+        {
+            _taskQueue.CompleteAdding();
+        }
+    }
+
     class UDPServer
     {
         public int port = 12345;
@@ -17,6 +60,7 @@ namespace TabletLink_WindowsApp
         IPEndPoint myIPEP;
         IPEndPoint targetIPEP;
         Thread receiveThread;
+        TaskQueue _sendQueue = new TaskQueue();
 
         private bool isMsgReceive;
         private bool isRunning = true;
@@ -26,6 +70,7 @@ namespace TabletLink_WindowsApp
             myIPEP = new IPEndPoint(host, 0);
             udpServer = new UdpClient(port); // 포트 12345로 바인딩
         }
+
 
         public void StartServer()
         {
@@ -83,8 +128,18 @@ namespace TabletLink_WindowsApp
 
         public void SendData(byte[] data)
         {
-            Console.Write($"Data Sent");
-            udpServer.Send(data, data.Length, targetIPEP);
+            _sendQueue.Enqueue(() =>
+            {
+                try
+                {
+                    Task.Run(async () =>
+                    await udpServer.SendAsync(data, data.Length, targetIPEP));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.ToString());
+                }
+            });
         }
 
         ~UDPServer()
@@ -101,6 +156,7 @@ namespace TabletLink_WindowsApp
             if (receiveThread != null && receiveThread.IsAlive)
                 receiveThread?.Join();
             udpServer?.Close();
+            _sendQueue?.Stop();
             Console.WriteLine("Server Closing");
         }
     }

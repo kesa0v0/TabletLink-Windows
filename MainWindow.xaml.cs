@@ -85,6 +85,7 @@ namespace TabletLink_WindowsApp
         protected override void OnClosing(CancelEventArgs e)
         {
             StopCapture();
+            server.CloseServer();
             base.OnClosing(e);
         }
 
@@ -98,7 +99,7 @@ namespace TabletLink_WindowsApp
             if (!isCapturing)
             {
                 server.StartServer();
-                StartCapture(frameCallbackInstance, 1920, 1080, 30);
+                StartCapture(frameCallbackInstance, 1920, 1080, 1);
                 isCapturing = true;
             }
             else
@@ -108,6 +109,26 @@ namespace TabletLink_WindowsApp
                 isCapturing = false;
             }
         }
+
+        public static byte[] StructToBytes(FrameData frameData)
+        {
+            int size = Marshal.SizeOf(frameData);
+            byte[] bytes = new byte[size];
+            IntPtr ptr = Marshal.AllocHGlobal(size);
+
+            try
+            {
+                Marshal.StructureToPtr(frameData, ptr, false);
+                Marshal.Copy(ptr, bytes, 0, size);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(ptr);
+            }
+
+            return bytes;
+        }
+
 
         // Callback 함수 구현
         void frameCallback(FrameData frameData)
@@ -119,26 +140,23 @@ namespace TabletLink_WindowsApp
             long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             // 네이티브 측 타임스탬프 읽기
-            byte[] frameDataArray = new byte[frameData.width * frameData.height * 4];
+            byte[] frameDataArray = new byte[frameData.dataSize];
             Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
 
             long nativeTimestamp = frameData.timestamp; // 네이티브 측 타임스탬프
             long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
+            int datasize = frameDataArray.Length;
 
             // FPS 카운트 증가
             frameCount++;
             if (stopwatch.ElapsedMilliseconds >= 1000)
             {
-                UpdateStatusText($"FPS: {frameCount}, delay: {delay}");
+                UpdateStatusText($"FPS: {frameCount}/{frameData.frameRate}, delay: {delay}, datasize: {datasize}");
                 frameCount = 0;
                 stopwatch.Restart();
             }
 
-            // UI 쓰레드에서 이미지 업데이트
-            this.Dispatcher.Invoke(() =>
-            {
-
-            });
+            server.SendData(StructToBytes(frameData));
         }
 
     }
