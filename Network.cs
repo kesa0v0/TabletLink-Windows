@@ -53,10 +53,12 @@ namespace TabletLink_WindowsApp
 
     class UDPServer
     {
-        public int port = 12345;
+        public int sendPort = 12346;
+        public int receivePort = 12345;
         public IPAddress host = IPAddress.Any;
 
-        UdpClient udpServer;
+        UdpClient udpSend;
+        UdpClient udpReceive;
         IPEndPoint myIPEP;
         IPEndPoint targetIPEP;
         Thread receiveThread;
@@ -68,8 +70,9 @@ namespace TabletLink_WindowsApp
         public UDPServer()
         {
             myIPEP = new IPEndPoint(host, 0);
-            udpServer = new UdpClient(port); // 포트 12345로 바인딩
-            targetIPEP = new IPEndPoint(IPAddress.Parse("127.0.0.1"), port); 
+            udpSend = new UdpClient(sendPort);
+            udpReceive = new UdpClient(receivePort);
+            targetIPEP = new IPEndPoint(IPAddress.Parse("10.0.2.16"), sendPort); 
         }
 
 
@@ -87,9 +90,9 @@ namespace TabletLink_WindowsApp
             {
                 try
                 {
-                    if (udpServer.Available > 0)
+                    if (udpReceive.Available > 0)
                     {
-                        udpServer.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+                        udpReceive.BeginReceive(new AsyncCallback(ReceiveCallback), null);
                         isMsgReceive = false;
                     }
                     else
@@ -106,7 +109,7 @@ namespace TabletLink_WindowsApp
 
         void ReceiveCallback(IAsyncResult ar)
         {
-            byte[] receivedData = udpServer.EndReceive(ar, ref targetIPEP);
+            byte[] receivedData = udpReceive.EndReceive(ar, ref targetIPEP);
             string receivedMessage = Encoding.UTF8.GetString(receivedData);
             Console.WriteLine($"클라이언트({targetIPEP?.Address}): {receivedMessage}");
             isMsgReceive = true;
@@ -120,7 +123,7 @@ namespace TabletLink_WindowsApp
                 try
                 {
                     Task.Run(async () =>
-                    await udpServer.SendAsync(data, data.Length, targetIPEP));
+                    await udpSend.SendAsync(data, data.Length, targetIPEP));
                     Console.WriteLine($"Send Data to {targetIPEP.Address}");
                 }
                 catch (Exception e)
@@ -143,7 +146,8 @@ namespace TabletLink_WindowsApp
             isRunning = false;
             if (receiveThread != null && receiveThread.IsAlive)
                 receiveThread?.Join();
-            udpServer?.Close();
+            udpSend?.Close();
+            udpReceive?.Close();
             _sendQueue?.Stop();
             Console.WriteLine("Server Closing");
         }
