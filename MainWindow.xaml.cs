@@ -1,13 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
-using System.ComponentModel;
-using static TabletLink_WindowsApp.MainWindow;
-using System.Threading.Tasks;
-
 using System.ComponentModel;
 
 
@@ -46,7 +41,6 @@ namespace TabletLink_WindowsApp
 
         private WriteableBitmap? bitmap;
         public bool isCapturing = false;
-        UDPServer server = new UDPServer();
 
         public MainWindow()
         {
@@ -71,12 +65,6 @@ namespace TabletLink_WindowsApp
             this.Close();
         }
 
-        protected override void OnClosing(CancelEventArgs e)
-        {
-            //server.CloseServer();
-            //StopCapture();
-            base.OnClosing(e);
-        }
 
         public void MinimizeWindow(object sender, RoutedEventArgs e)
         {
@@ -164,26 +152,6 @@ namespace TabletLink_WindowsApp
             return bytes;
         }
 
-        public static byte[] StructToBytes(FrameData frameData)
-        {
-            int size = Marshal.SizeOf(frameData);
-            byte[] bytes = new byte[size];
-            IntPtr ptr = Marshal.AllocHGlobal(size);
-
-            try
-            {
-                Marshal.StructureToPtr(frameData, ptr, false);
-                Marshal.Copy(ptr, bytes, 0, size);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(ptr);
-            }
-
-            return bytes;
-        }
-
-
         // Callback 함수 구현
         void frameCallback(FrameData frameData)
         {
@@ -214,4 +182,6 @@ namespace TabletLink_WindowsApp
         }
 
     }
+
+    #endregion
 }
