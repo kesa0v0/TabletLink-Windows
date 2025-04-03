@@ -70,9 +70,9 @@ namespace TabletLink_WindowsApp
         public UDPServer()
         {
             myIPEP = new IPEndPoint(host, 0);
-            udpSend = new UdpClient(sendPort);
+            udpSend = new UdpClient();
             udpReceive = new UdpClient(receivePort);
-            targetIPEP = new IPEndPoint(IPAddress.Parse("10.0.2.16"), sendPort); 
+            targetIPEP = new IPEndPoint(IPAddress.Parse("10.0.2.2"), sendPort); 
         }
 
 
@@ -144,11 +144,11 @@ namespace TabletLink_WindowsApp
             if (!isRunning)
                 return;
             isRunning = false;
-            if (receiveThread != null && receiveThread.IsAlive)
-                receiveThread?.Join();
             udpSend?.Close();
             udpReceive?.Close();
             _sendQueue?.Stop();
+            if (receiveThread != null && receiveThread.IsAlive)
+                receiveThread?.Join();
             Console.WriteLine("Server Closing");
         }
     }
