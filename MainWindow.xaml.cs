@@ -5,6 +5,8 @@ using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.ComponentModel;
+using static TabletLink_WindowsApp.MainWindow;
+using System.Threading.Tasks;
 
 
 
@@ -99,15 +101,39 @@ namespace TabletLink_WindowsApp
             if (!isCapturing)
             {
                 server.StartServer();
-                StartCapture(frameCallbackInstance, 1920, 1080, 1);
+                //StartCapture(frameCallbackInstance, 1920, 1080, 1);
                 isCapturing = true;
+                sendTestData();
             }
             else
             {
                 server.CloseServer();
-                StopCapture();
+                //StopCapture();
                 isCapturing = false;
             }
+        }
+
+        public void sendTestData()
+        {
+            // 비동기적으로 1초마다 데이터 전송
+
+            Task.Run(async () =>
+            {
+                while (isCapturing)
+                {
+                    FrameData testData = new FrameData();
+                    testData.width = 10;
+                    testData.height = 10;
+                    testData.frameRate = 1;
+                    testData.dataSize = 100;
+                    testData.data = Marshal.AllocHGlobal(testData.dataSize);
+                    testData.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+                    server.SendData(StructToBytes(testData));
+                    await Task.Delay(1000);
+                }
+            });
+
         }
 
         public static byte[] StructToBytes(FrameData frameData)

@@ -71,17 +71,17 @@ namespace TabletLink_WindowsApp
         {
             myIPEP = new IPEndPoint(host, 0);
             udpSend = new UdpClient();
-            udpReceive = new UdpClient(receivePort);
-            targetIPEP = new IPEndPoint(IPAddress.Parse("10.0.2.2"), sendPort); 
+            //udpReceive = new UdpClient(receivePort);
+            targetIPEP = new IPEndPoint(IPAddress.Parse("10.0.2.16"), sendPort); 
         }
 
 
         public void StartServer()
         {
             Console.WriteLine("UDP 서버 실행 중...");
-            receiveThread = new Thread(ReceiveData);
-            receiveThread.IsBackground = true;
-            receiveThread.Start();
+            //receiveThread = new Thread(ReceiveData);
+            //receiveThread.IsBackground = true;
+            //receiveThread.Start();
         }
 
         void ReceiveData()
