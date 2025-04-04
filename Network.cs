@@ -4,9 +4,8 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Net;
 using System.Text;
-using System.Threading.Tasks;
 using System.Collections.Concurrent;
-using System.Threading;
+using System.IO;
 
 namespace TabletLink_WindowsApp
 {
@@ -58,6 +57,27 @@ namespace TabletLink_WindowsApp
         TaskQueue _sendQueue = new();
 
         private bool isRunning = true;
+        private bool isConnected = false;
+
+        public enum PacketType : byte
+        {
+            DiscoverTabletServer = 0x01,
+            PenInput = 0x02
+        }
+
+        public struct PenData
+        {
+            public float X;
+            public float Y;
+            public float pressure;
+            public long timestamp;
+        }
+
+        public class ReceivedData
+        {
+            public PacketType Type { get; set; }
+            public PenData? Data { get; set; }
+        }
 
         public UDPServer()
         {
@@ -86,6 +106,41 @@ namespace TabletLink_WindowsApp
             return "127.0.0.1";
         }
 
+        public static ReceivedData ParsePacket(byte[] bytes)
+        {
+            using (var stream = new MemoryStream(bytes))
+            using (var reader = new BinaryReader(stream))
+            {
+                var typeByte = reader.ReadByte();
+                var type = (PacketType)typeByte;
+
+                PenData? data = null;
+                if (stream.Position < stream.Length)
+                {
+                    int _X = reader.ReadInt32();
+                    int _Y = reader.ReadInt32();
+                    int _pressure = reader.ReadInt32();
+                    byte[] longBytes = reader.ReadBytes(8);
+                    if (BitConverter.IsLittleEndian)
+                        Array.Reverse(longBytes);
+                    data = new PenData
+                    {
+                        X = _X,
+                        Y = _Y,
+                        pressure = _pressure,
+                        timestamp = BitConverter.ToInt64(longBytes, 0)
+
+                    };
+                }
+
+                return new ReceivedData
+                {
+                    Type = type,
+                    Data = data
+                };
+            }
+        }
+
         void ReceiveData()
         {
             while (isRunning)
@@ -95,13 +150,20 @@ namespace TabletLink_WindowsApp
                     if (udpReceive.Available > 0)
                     {
                         var data = udpReceive.Receive(ref clientEndPoint);
-                        string msg = Encoding.UTF8.GetString(data);
-                        Console.WriteLine($"From client {clientEndPoint}: {msg}");
+                        var packet = ParsePacket(data);
+                        Console.WriteLine($"From client {clientEndPoint}: {packet.Type}");
 
-                        if (msg == "DISCOVER_TABLET_SERVER")
+                        if (packet.Type == PacketType.DiscoverTabletServer)
                         {
-                            byte[] ack = Encoding.UTF8.GetBytes($"TABLET_SERVER_ACK:{GetLocalIPAddress()}");
-                            udpSend.Send(ack, ack.Length, new IPEndPoint(clientEndPoint.Address, sendPort));
+                            byte[] ack = Encoding.UTF8.GetBytes($"TABLET_SERVER_ACK:{GetLocalIPAddress()}:{receivePort}");
+                            udpSend.Send(ack, ack.Length, new IPEndPoint(clientEndPoint.Address, clientEndPoint.Port));
+                            isConnected = true;
+                        }
+                        else if (packet.Type == PacketType.PenInput && packet.Data != null)
+                        {
+                            var penData = packet.Data.Value;
+                            Console.WriteLine($"stamp:{penData.timestamp} now:{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
+                            Console.WriteLine($"펜 입력: x={penData.X}, y={penData.Y}, pressure={penData.pressure}, latency={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - penData.timestamp}");
                         }
                     }   
                     else
@@ -116,31 +178,10 @@ namespace TabletLink_WindowsApp
             }
         }
 
-        //void ReceiveCallback(IAsyncResult ar)
-        //{
-        //    byte[] receivedData = udpReceive.EndReceive(ar, ref cl);
-        //    string msg = Encoding.UTF8.GetString(receivedData);
-
-        //    if (msg == "CONNECT")
-        //    {
-        //        Console.WriteLine($"연결 요청 수신: {targetIPEP}");
-        //        // 이 이후로 이 targetIPEP로 화면 전송 가능
-        //    }
-        //    else
-        //    {
-        //        // 펜 입력 처리
-        //        var x = BitConverter.ToSingle(receivedData, 0);
-        //        var y = BitConverter.ToSingle(receivedData, 4);
-        //        var pressure = BitConverter.ToSingle(receivedData, 8);
-        //        var timestamp = BitConverter.ToInt64(receivedData, 12);
-
-        //        Console.WriteLine($"펜 입력: x={x}, y={y}, pressure={pressure}, latency={DateTimeOffset.Now.ToUnixTimeMilliseconds() - timestamp}ms");
-        //    }
-        //}
-
         public void SendData(byte[] data)
         {
             if (clientEndPoint == null) return;
+            if (!isConnected) return;
 
             _sendQueue.Enqueue(() =>
             {
@@ -167,6 +208,7 @@ namespace TabletLink_WindowsApp
             if (!isRunning)
                 return;
             isRunning = false;
+            isConnected = false;
             udpSend?.Close();
             udpReceive?.Close();
             _sendQueue?.Stop();
