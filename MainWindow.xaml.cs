@@ -100,7 +100,7 @@ namespace TabletLink_WindowsApp
                 server.StartServer();
                 //StartCapture(frameCallbackInstance, 1920, 1080, 1);
                 isCapturing = true;
-                sendTestData();
+                //sendTestData();
             }
             else
             {
