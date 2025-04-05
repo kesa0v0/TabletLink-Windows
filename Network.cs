@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Security.Cryptography;
 
 namespace TabletLink_WindowsApp
 {
@@ -187,8 +188,8 @@ namespace TabletLink_WindowsApp
             {
                 try
                 {
-                    Console.WriteLine($"Data to {clientEndPoint}: {data.Length} bytes");
-                    udpSend.Send(data, data.Length, new IPEndPoint(clientEndPoint.Address, sendPort));
+                    Console.WriteLine($"{RandomNumberGenerator.GetInt32(12321)}: Data to {clientEndPoint}: {dataCopy.Length} bytes");
+                    udpSend.Send(data, data.Length, clientEndPoint);
                 }
                 catch (Exception e)
                 {

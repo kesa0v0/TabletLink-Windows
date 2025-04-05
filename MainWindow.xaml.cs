@@ -4,6 +4,7 @@ using System.Windows.Media.Imaging;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.ComponentModel;
+using System.IO;
 
 
 namespace TabletLink_WindowsApp
@@ -100,7 +101,7 @@ namespace TabletLink_WindowsApp
                 server.StartServer();
                 //StartCapture(frameCallbackInstance, 1920, 1080, 1);
                 isCapturing = true;
-                //sendTestData();
+                sendTestData();
             }
             else
             {
@@ -119,11 +120,11 @@ namespace TabletLink_WindowsApp
                 while (isCapturing)
                 {
                     FrameData testData = new FrameData();
+                    testData.dataSize = 10 * 10 * 4;
+                    testData.data = Marshal.AllocHGlobal(testData.dataSize);
                     testData.width = 10;
                     testData.height = 10;
                     testData.frameRate = 1;
-                    testData.dataSize = 100;
-                    testData.data = Marshal.AllocHGlobal(testData.dataSize);
                     testData.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
                     server.SendData(StructToBytes(testData));
@@ -132,24 +133,43 @@ namespace TabletLink_WindowsApp
             });
 
         }
+        public static int ReverseBytes(int value)
+        {
+            byte[] bytes = BitConverter.GetBytes(value);
+            Array.Reverse(bytes);
+            return BitConverter.ToInt32(bytes, 0);
+        }
+
+        public static long ReverseBytes(long value)
+        {
+            byte[] bytes = BitConverter.GetBytes(value);
+            Array.Reverse(bytes);
+            return BitConverter.ToInt64(bytes, 0);
+        }
+        // 엔디언 변환 함수
+        public static int SwapEndian(int value) => BitConverter.IsLittleEndian ? ReverseBytes(value) : value;
+        public static long SwapEndian(long value) => BitConverter.IsLittleEndian ? ReverseBytes(value) : value;
 
         public static byte[] StructToBytes(FrameData frameData)
         {
-            int size = Marshal.SizeOf(frameData);
-            byte[] bytes = new byte[size];
-            IntPtr ptr = Marshal.AllocHGlobal(size);
-
-            try
+            using (MemoryStream stream = new MemoryStream())
+            using (BinaryWriter writer = new BinaryWriter(stream))
             {
-                Marshal.StructureToPtr(frameData, ptr, false);
-                Marshal.Copy(ptr, bytes, 0, size);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(ptr);
+                writer.Write(SwapEndian(frameData.width));
+                writer.Write(SwapEndian(frameData.height));
+                writer.Write(SwapEndian(frameData.frameRate));
+                writer.Write(SwapEndian(frameData.dataSize));
+                writer.Write(SwapEndian(frameData.timestamp));
+
+                if (frameData.data != IntPtr.Zero && frameData.dataSize > 0)
+                {
+                    byte[] dataArray = new byte[frameData.dataSize];
+                    Marshal.Copy(frameData.data, dataArray, 0, frameData.dataSize);
+                    writer.Write(dataArray);
+                }
+                return stream.ToArray();
             }
 
-            return bytes;
         }
 
         // Callback 함수 구현
