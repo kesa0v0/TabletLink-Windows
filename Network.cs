@@ -188,7 +188,7 @@ namespace TabletLink_WindowsApp
             {
                 try
                 {
-                    Console.WriteLine($"{RandomNumberGenerator.GetInt32(12321)}: Data to {clientEndPoint}: {dataCopy.Length} bytes");
+                    Console.WriteLine($"{RandomNumberGenerator.GetInt32(12321)}: Data to {clientEndPoint}: {data.Length} bytes");
                     udpSend.Send(data, data.Length, clientEndPoint);
                 }
                 catch (Exception e)

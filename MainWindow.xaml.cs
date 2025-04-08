@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.ComponentModel;
 using System.IO;
+using System.Security.Cryptography;
 
 
 namespace TabletLink_WindowsApp
@@ -122,7 +123,7 @@ namespace TabletLink_WindowsApp
                     FrameData testData = new FrameData();
                     testData.dataSize = 10 * 10 * 4;
                     testData.data = Marshal.AllocHGlobal(testData.dataSize);
-                    testData.width = 10;
+                    testData.width = RandomNumberGenerator.GetInt32(12321);
                     testData.height = 10;
                     testData.frameRate = 1;
                     testData.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
