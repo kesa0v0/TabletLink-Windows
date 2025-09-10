@@ -5,13 +5,14 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TabletLink_WindowsApp"
         mc:Ignorable="d"
-        Height="200" Width="400" ResizeMode="NoResize" WindowStyle="None" Background="White" Loaded="Window_Loaded">
+        Height="200" Width="400"  Background="White" Loaded="Window_Loaded">
+    <!--ResizeMode="NoResize"-->
 	<Grid Margin="10">
 		<StackPanel>
 			<TextBlock Text="서버 상태" FontSize="16" FontWeight="Bold"/>
 			<TextBlock x:Name="StatusText" Text="서버 시작 전..." Margin="0,5,0,0" FontSize="14"/>
 			<TextBlock Text="수신된 입력 데이터" FontSize="16" FontWeight="Bold" Margin="0,20,0,0"/>
-			<ScrollViewer Height="150" VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="LogScrollViewer" Height="150" VerticalScrollBarVisibility="Auto">
 				<TextBlock x:Name="LogText" Text="" Margin="0,5,0,0" FontFamily="Consolas"/>
 			</ScrollViewer>
 		</StackPanel>

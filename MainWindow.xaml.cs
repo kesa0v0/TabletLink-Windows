@@ -30,10 +30,12 @@ namespace TabletLink_WindowsApp
                 tcpListener = new TcpListener(IPAddress.Any, PORT);
                 tcpListener.Start();
 
-                // UI 스레드에서 상태 업데이트
+                // UI 스레드에서 상태 및 로그 업데이트
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    StatusText.Text = $"서버 시작됨. IP: {GetLocalIPAddress()}, Port: {PORT}\n연결 대기 중...";
+                    string ipAddress = GetLocalIPAddress();
+                    StatusText.Text = $"서버 시작됨. IP: {ipAddress}, Port: {PORT}\n연결 대기 중...";
+                    Log($"서버가 IP {ipAddress} 포트 {PORT}에서 시작되었습니다.");
                 });
 
                 while (true)
@@ -46,7 +48,8 @@ namespace TabletLink_WindowsApp
                     {
                         var clientEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
                         StatusText.Text = $"클라이언트 연결됨: {clientEndPoint.Address}";
-                        LogText.Text = ""; // 로그 초기화
+                        LogText.Text = ""; // 새 클라이언트 연결 시 로그 초기화
+                        Log($"클라이언트 연결 성공: {clientEndPoint.Address}");
                     });
 
                     // 연결된 클라이언트와의 통신을 위한 새 태스크 시작
@@ -55,12 +58,14 @@ namespace TabletLink_WindowsApp
             }
             catch (Exception ex)
             {
+                await Dispatcher.InvokeAsync(() => Log($"서버 시작 오류: {ex.Message}"));
                 MessageBox.Show($"서버 오류: {ex.Message}");
             }
         }
 
         private async Task HandleClient(TcpClient client)
         {
+            var clientEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
             try
             {
                 using (var stream = client.GetStream())
@@ -72,20 +77,15 @@ namespace TabletLink_WindowsApp
                         var data = await reader.ReadLineAsync();
                         if (data == null) break; // 클라이언트 연결 끊김
 
-                        // UI 스레드에서 로그 업데이트
-                        await Dispatcher.InvokeAsync(() =>
-                        {
-                            LogText.Text += data + "\n";
-                        });
-
-                        // TODO: 여기서 수신된 데이터를 파싱하여 펜 입력 처리 함수를 호출해야 합니다.
-                        // 예: ParseAndInjectPenInput(data);
+                        // 수신된 데이터를 파싱하여 펜 입력 처리 함수를 호출합니다.
+                        ParseAndInjectPenInput(data);
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 예외 처리 (클라이언트 연결 끊김 등)
+                await Dispatcher.InvokeAsync(() => Log($"클라이언트({clientEndPoint.Address}) 처리 중 오류: {ex.Message}"));
             }
             finally
             {
@@ -93,8 +93,66 @@ namespace TabletLink_WindowsApp
                 await Dispatcher.InvokeAsync(() =>
                 {
                     StatusText.Text = "클라이언트 연결 끊김. 다시 연결 대기 중...";
+                    Log($"클라이언트({clientEndPoint.Address}) 연결이 종료되었습니다.");
                 });
             }
+        }
+
+        private void ParseAndInjectPenInput(string data)
+        {
+            try
+            {
+                // 데이터 형식: "ACTION:X,Y,Pressure" (예: "MOVE:123.45,678.90,0.543")
+                var parts = data.Split(':');
+                if (parts.Length != 2)
+                {
+                    Log($"데이터 형식 오류 (Invalid format): {data}");
+                    return;
+                }
+
+                var action = parts[0].ToUpper();
+                var coords = parts[1].Split(',');
+                if (coords.Length != 3)
+                {
+                    Log($"데이터 형식 오류 (Invalid coords): {data}");
+                    return;
+                }
+
+                // CultureInfo.InvariantCulture를 사용하여 소수점 파싱 오류 방지
+                if (float.TryParse(coords[0], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out float x) &&
+                    float.TryParse(coords[1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out float y) &&
+                    float.TryParse(coords[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out float pressure))
+                {
+                    // DOWN, UP 이벤트만 로그를 남겨서 로그 창이 너무 빠르게 스크롤되는 것을 방지
+                    if (action == "DOWN" || action == "UP")
+                    {
+                        Log($"입력 파싱: Action={action}, X={x:F2}, Y={y:F2}, Pressure={pressure:F3}");
+                    }
+
+                    // 펜 입력 주입 클래스 호출
+                    PenInjector.InjectPenInput(x, y, pressure, action);
+                }
+                else
+                {
+                    Log($"숫자 변환 오류: {data}");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 파싱 오류 발생 시 로그 기록
+                Log($"파싱 및 주입 오류: {ex.Message}");
+            }
+        }
+
+        // 로그 기록을 위한 헬퍼 함수
+        private void Log(string message)
+        {
+            // UI 스레드에서 안전하게 LogText 업데이트
+            Dispatcher.InvokeAsync(() => {
+                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                LogText.Text += $"[{timestamp}] {message}\n";
+                LogScrollViewer.ScrollToEnd(); // 스크롤을 항상 맨 아래로 이동
+            });
         }
 
         // 로컬 IP 주소를 가져오는 도우미 함수
