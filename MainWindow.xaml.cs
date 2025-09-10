@@ -1,208 +1,114 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media.Imaging;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
-using System.ComponentModel;
+using System;
 using System.IO;
-using System.Security.Cryptography;
-
+using System.Net;
+using System.Net.Sockets;
+using System.Threading.Tasks;
+using System.Windows;
 
 namespace TabletLink_WindowsApp
 {
     public partial class MainWindow : Window
     {
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StartCapture(FrameCallback frameCallback, int frameWidth, int frameHeight, int frameRate);
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StopCapture();
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr TestDLL();
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct FrameData
-        {
-            public IntPtr data;
-            public int width;
-            public int height;
-            public int frameRate;
-
-            public int dataSize;
-            public long timestamp;
-        }
-
-        // Callback 델리게이트 정의
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void FrameCallback(FrameData frameData);
-        private static FrameCallback? frameCallbackInstance;
-        UDPServer server = new UDPServer();
-
-        private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
-        private int frameCount = 0; // 초당 프레임 수 카운트
-
-
-        private WriteableBitmap? bitmap;
-        public bool isCapturing = false;
+        private const int PORT = 54321; // 태블릿과 통신할 포트 번호
+        private TcpListener tcpListener;
 
         public MainWindow()
         {
             InitializeComponent();
-
-            frameCallbackInstance = new FrameCallback(frameCallback);
-
         }
 
-        #region UI
-
-        public void UpdateStatusText(string text)
+        private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            this.Dispatcher.Invoke(() =>
+            // 윈도우가 로드되면 비동기적으로 서버 시작
+            Task.Run(() => StartServer());
+        }
+
+        private async Task StartServer()
+        {
+            try
             {
-                this.StatusText.Text = text;
-            });
-        }
+                tcpListener = new TcpListener(IPAddress.Any, PORT);
+                tcpListener.Start();
 
-        public void CloseWindow(object sender, RoutedEventArgs e)
-        {
-            this.Close();
-        }
-
-
-        public void MinimizeWindow(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        public void OpenSettings(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        public void Window_MouseLeftButtonDown(object sender, RoutedEventArgs e)
-        {
-            this.DragMove();
-        }
-
-        protected override void OnClosing(CancelEventArgs e)
-        {
-            StopCapture();
-            server.CloseServer();
-            base.OnClosing(e);
-        }
-
-        // 버튼 입력
-        private void Connect_Click(object sender, RoutedEventArgs e)
-        {
-            Button button = (Button)sender;
-            string buttonName = button.Name;
-            string? buttonText = button.Content.ToString();
-
-            if (!isCapturing)
-            {
-                server.StartServer();
-                StartCapture(frameCallbackInstance, 1920, 1080, 1);
-                isCapturing = true;
-                //sendTestData();
-            }
-            else
-            {
-                server.CloseServer();
-                StopCapture();
-                isCapturing = false;
-            }
-        }
-
-        public void sendTestData()
-        {
-            // 비동기적으로 1초마다 데이터 전송
-
-            Task.Run(async () =>
-            {
-                while (isCapturing)
+                // UI 스레드에서 상태 업데이트
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    FrameData testData = new FrameData();
-                    testData.dataSize = 10 * 10 * 4;
-                    testData.data = Marshal.AllocHGlobal(testData.dataSize);
-                    testData.width = RandomNumberGenerator.GetInt32(12321);
-                    testData.height = 10;
-                    testData.frameRate = 1;
-                    testData.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    StatusText.Text = $"서버 시작됨. IP: {GetLocalIPAddress()}, Port: {PORT}\n연결 대기 중...";
+                });
 
-                    server.SendData(StructToBytes(testData));
-                    await Task.Delay(1000);
-                }
-            });
-
-        }
-        public static int ReverseBytes(int value)
-        {
-            byte[] bytes = BitConverter.GetBytes(value);
-            Array.Reverse(bytes);
-            return BitConverter.ToInt32(bytes, 0);
-        }
-
-        public static long ReverseBytes(long value)
-        {
-            byte[] bytes = BitConverter.GetBytes(value);
-            Array.Reverse(bytes);
-            return BitConverter.ToInt64(bytes, 0);
-        }
-        // 엔디언 변환 함수
-        public static int SwapEndian(int value) => BitConverter.IsLittleEndian ? ReverseBytes(value) : value;
-        public static long SwapEndian(long value) => BitConverter.IsLittleEndian ? ReverseBytes(value) : value;
-
-        public static byte[] StructToBytes(FrameData frameData)
-        {
-            using (MemoryStream stream = new MemoryStream())
-            using (BinaryWriter writer = new BinaryWriter(stream))
-            {
-                writer.Write(SwapEndian(frameData.width));
-                writer.Write(SwapEndian(frameData.height));
-                writer.Write(SwapEndian(frameData.frameRate));
-                writer.Write(SwapEndian(frameData.dataSize));
-                writer.Write(SwapEndian(frameData.timestamp));
-
-                if (frameData.data != IntPtr.Zero && frameData.dataSize > 0)
+                while (true)
                 {
-                    byte[] dataArray = new byte[frameData.dataSize];
-                    Marshal.Copy(frameData.data, dataArray, 0, frameData.dataSize);
-                    writer.Write(dataArray);
+                    // 클라이언트의 연결을 비동기적으로 기다림
+                    TcpClient client = await tcpListener.AcceptTcpClientAsync();
+
+                    // 클라이언트가 연결되면 UI 업데이트
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        var clientEndPoint = client.Client.RemoteEndPoint as IPEndPoint;
+                        StatusText.Text = $"클라이언트 연결됨: {clientEndPoint.Address}";
+                        LogText.Text = ""; // 로그 초기화
+                    });
+
+                    // 연결된 클라이언트와의 통신을 위한 새 태스크 시작
+                    _ = Task.Run(() => HandleClient(client));
                 }
-                return stream.ToArray();
             }
-
-        }
-
-        // Callback 함수 구현
-        void frameCallback(FrameData frameData)
-        {
-            if(isCapturing == false)
-                return;
-            
-
-            long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-            // 네이티브 측 타임스탬프 읽기
-            byte[] frameDataArray = new byte[frameData.dataSize];
-            Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
-
-            long nativeTimestamp = frameData.timestamp; // 네이티브 측 타임스탬프
-            long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
-            int datasize = frameDataArray.Length;
-
-            // FPS 카운트 증가
-            frameCount++;
-            if (stopwatch.ElapsedMilliseconds >= 1000)
+            catch (Exception ex)
             {
-                UpdateStatusText($"FPS: {frameCount}/{frameData.frameRate}, delay: {delay}, datasize: {datasize}");
-                frameCount = 0;
-                stopwatch.Restart();
+                MessageBox.Show($"서버 오류: {ex.Message}");
             }
-
-            server.SendData(StructToBytes(frameData));
         }
 
+        private async Task HandleClient(TcpClient client)
+        {
+            try
+            {
+                using (var stream = client.GetStream())
+                using (var reader = new StreamReader(stream))
+                {
+                    while (client.Connected)
+                    {
+                        // 클라이언트로부터 데이터를 비동기적으로 읽음
+                        var data = await reader.ReadLineAsync();
+                        if (data == null) break; // 클라이언트 연결 끊김
+
+                        // UI 스레드에서 로그 업데이트
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            LogText.Text += data + "\n";
+                        });
+
+                        // TODO: 여기서 수신된 데이터를 파싱하여 펜 입력 처리 함수를 호출해야 합니다.
+                        // 예: ParseAndInjectPenInput(data);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 예외 처리 (클라이언트 연결 끊김 등)
+            }
+            finally
+            {
+                client.Close();
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    StatusText.Text = "클라이언트 연결 끊김. 다시 연결 대기 중...";
+                });
+            }
+        }
+
+        // 로컬 IP 주소를 가져오는 도우미 함수
+        private string GetLocalIPAddress()
+        {
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            foreach (var ip in host.AddressList)
+            {
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return ip.ToString();
+                }
+            }
+            return "IP를 찾을 수 없음";
+        }
     }
-
-    #endregion
 }
