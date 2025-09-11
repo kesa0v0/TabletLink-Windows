@@ -2,8 +2,9 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media;
+
 
 namespace TabletLink_WindowsApp
 {
@@ -16,16 +17,56 @@ namespace TabletLink_WindowsApp
         private int androidDeviceHeight = 0;
         private int androidDeviceFPS = 0;
 
+        private int monitorWidth = 0;
+        private int monitorHeight = 0;
+
+        private float widthRatio = 1.0f;
+        private float heightRatio = 1.0f;
+
         public MainWindow()
         {
             InitializeComponent();
+
             PenInputInjector.Initialize();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             // 윈도우가 로드되면 비동기적으로 서버 시작
+            GetMonitorInfo();
             Task.Run(() => StartServer());
+        }
+
+        private void GetMonitorInfo()
+        {
+            // 1. WPF가 인식하는 논리적 화면 크기
+            double logicalScreenWidth = SystemParameters.PrimaryScreenWidth;
+            double logicalScreenHeight = SystemParameters.PrimaryScreenHeight;
+
+            // 2. 현재 창의 DPI 스케일링 값 얻기
+            PresentationSource source = PresentationSource.FromVisual(this);
+            double dpiX = 1.0, dpiY = 1.0;
+            if (source != null)
+            {
+                dpiX = source.CompositionTarget.TransformToDevice.M11;
+                dpiY = source.CompositionTarget.TransformToDevice.M22;
+            }
+
+            // 3. 실제 물리적 픽셀 해상도 계산
+            double actualScreenWidth = logicalScreenWidth * dpiX;
+            double actualScreenHeight = logicalScreenHeight * dpiY;
+
+            // 결과 출력
+            Log(
+                $"논리 해상도: {logicalScreenWidth} x {logicalScreenHeight}\n" +
+                $"DPI 배율: {dpiX * 100}%\n" +
+                $"실제 해상도: {actualScreenWidth} x {actualScreenHeight}"
+            );
+            // 아마도 "실제 해상도: 2880 x 1800" 라고 출력될 것입니다.
+
+            monitorWidth = (int)actualScreenWidth;
+            monitorHeight = (int)actualScreenHeight;
+
         }
 
         private async Task StartServer()
@@ -87,6 +128,10 @@ namespace TabletLink_WindowsApp
                             int.TryParse(infoParts[1], out androidDeviceHeight) &&
                             int.TryParse(infoParts[2], out androidDeviceFPS))
                         {
+                            // 해상도 비율 계산
+                            widthRatio = (float)monitorWidth / androidDeviceWidth;
+                            heightRatio = (float)monitorHeight / androidDeviceHeight;
+
                             await Dispatcher.InvokeAsync(() =>
                                 Log($"클라이언트 디바이스 정보 수신: Width={androidDeviceWidth}, Height={androidDeviceHeight}, FPS={androidDeviceFPS}")
                             );
@@ -167,8 +212,13 @@ namespace TabletLink_WindowsApp
                     }
 
                     // !!! 중요: 수신된 좌표를 윈도우 화면 해상도에 맞게 스케일링하는 로직이 여기에 필요합니다. !!!
-                     int scaledX = (int)(x * (System.Windows.SystemParameters.PrimaryScreenWidth / androidDeviceWidth));
-                     int scaledY = (int)(y * (System.Windows.SystemParameters.PrimaryScreenHeight / androidDeviceHeight));
+                    int scaledX = (int)(x * widthRatio);
+                    int scaledY = (int)(y * heightRatio);
+
+                    if (action == "DOWN" || action == "UP")
+                    {
+                        Log($"스케일링된 좌표: X={scaledX}, Y={scaledY}");
+                    }
 
                     // 펜 입력 주입 클래스 호출
                     switch (action)
@@ -203,6 +253,7 @@ namespace TabletLink_WindowsApp
             Dispatcher.InvokeAsync(() => {
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
                 LogText.Text += $"[{timestamp}] {message}\n";
+                Console.WriteLine($"[{timestamp}] {message}");
                 LogScrollViewer.ScrollToEnd(); // 스크롤을 항상 맨 아래로 이동
             });
         }
