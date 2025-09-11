@@ -12,9 +12,14 @@ namespace TabletLink_WindowsApp
         private const int PORT = 54321; // 태블릿과 통신할 포트 번호
         private TcpListener tcpListener;
 
+        private int androidDeviceWidth = 0;
+        private int androidDeviceHeight = 0;
+        private int androidDeviceFPS = 0;
+
         public MainWindow()
         {
             InitializeComponent();
+            PenInputInjector.Initialize();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -71,6 +76,38 @@ namespace TabletLink_WindowsApp
                 using (var stream = client.GetStream())
                 using (var reader = new StreamReader(stream))
                 {
+                    // 최초 연결 시 디바이스 정보 1회 수신
+                    var deviceInfo = await reader.ReadLineAsync();
+                    if (deviceInfo != null && deviceInfo.StartsWith("DEVICEINFO:"))
+                    {
+                        // 예시: DEVICEINFO:1920,1200,60
+                        var infoParts = deviceInfo.Substring("DEVICEINFO:".Length).Split(',');
+                        if (infoParts.Length == 3 &&
+                            int.TryParse(infoParts[0], out androidDeviceWidth) &&
+                            int.TryParse(infoParts[1], out androidDeviceHeight) &&
+                            int.TryParse(infoParts[2], out androidDeviceFPS))
+                        {
+                            await Dispatcher.InvokeAsync(() =>
+                                Log($"클라이언트 디바이스 정보 수신: Width={androidDeviceWidth}, Height={androidDeviceHeight}, FPS={androidDeviceFPS}")
+                            );
+                        }
+                        else
+                        {
+                            await Dispatcher.InvokeAsync(() =>
+                                Log($"디바이스 정보 파싱 실패: {deviceInfo}")
+                            );
+                            client.Close();
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                            Log("디바이스 정보가 올바르지 않음. 연결 종료.")
+                        );
+                        client.Close();
+                        return;
+                    }
                     while (client.Connected)
                     {
                         // 클라이언트로부터 데이터를 비동기적으로 읽음
@@ -129,8 +166,23 @@ namespace TabletLink_WindowsApp
                         Log($"입력 파싱: Action={action}, X={x:F2}, Y={y:F2}, Pressure={pressure:F3}");
                     }
 
+                    // !!! 중요: 수신된 좌표를 윈도우 화면 해상도에 맞게 스케일링하는 로직이 여기에 필요합니다. !!!
+                     int scaledX = (int)(x * (System.Windows.SystemParameters.PrimaryScreenWidth / androidDeviceWidth));
+                     int scaledY = (int)(y * (System.Windows.SystemParameters.PrimaryScreenHeight / androidDeviceHeight));
+
                     // 펜 입력 주입 클래스 호출
-                    PenInjector.InjectPenInput(x, y, pressure, action);
+                    switch (action)
+                    {
+                        case "DOWN": // ACTION_DOWN
+                            PenInputInjector.InjectPenDown(scaledX, scaledY, pressure);
+                            break;
+                        case "MOVE": // ACTION_MOVE
+                            PenInputInjector.InjectPenMove(scaledX, scaledY, pressure);
+                            break;
+                        case "UP": // ACTION_UP
+                            PenInputInjector.InjectPenUp(scaledX, scaledY);
+                            break;
+                    }
                 }
                 else
                 {
@@ -167,6 +219,11 @@ namespace TabletLink_WindowsApp
                 }
             }
             return "IP를 찾을 수 없음";
+        }
+        // 애플리케이션 종료 시 (예: MainWindow_Closing 이벤트)
+        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            PenInputInjector.Uninitialize();
         }
     }
 }
