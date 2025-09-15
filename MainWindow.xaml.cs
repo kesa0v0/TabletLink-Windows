@@ -1,3 +1,4 @@
+using OpenTabletDriver.Native.Posix;
 using System;
 using System.IO;
 using System.Net;
@@ -232,6 +233,10 @@ namespace TabletLink_WindowsApp
                         case "UP": // ACTION_UP
                             PenInputInjector.InjectPenUp(scaledX, scaledY);
                             break;
+                        case "HOVER": // <<< ACTION_HOVER_MOVE (새로 추가)
+                            //PenInputInjector.InjectPenHover(scaledX, scaledY, tiltX, tiltY);
+                            break;
+
                     }
                 }
                 else

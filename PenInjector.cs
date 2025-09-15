@@ -41,42 +41,75 @@ public static class PenInputInjector
         }
     }
 
+
     /// <summary>
     /// 지정된 좌표에 펜을 누르는 입력을 주입합니다.
     /// </summary>
-    /// <param name="x">X 좌표</param>
-    /// <param name="y">Y 좌표</param>
-    /// <param name="pressure">필압 (0.0f ~ 1.0f)</param>
-    public static void InjectPenDown(int x, int y, float pressure = 0.5f)
+    public static void InjectPenDown(int x, int y, float pressure = 0.5f, bool isBarrelButtonPressed = false, int tiltX = 0, int tiltY = 0)
     {
-        var pointerInfo = CreatePointerPenInfo(x, y, pressure, POINTER_FLAGS.DOWN);
+        var pointerInfo = CreatePointerPenInfo(x, y, pressure, POINTER_FLAGS.DOWN, isBarrelButtonPressed, tiltX, tiltY);
         InjectSyntheticPointerInput(_penDevice, new[] { pointerInfo }, 1);
         _isPenDown = true;
     }
 
     /// <summary>
-    /// 지정된 좌표로 펜을 움직이는 입력을 주입합니다. InjectPenDown()이 호출된 후에 사용해야 합니다.
+    /// 지정된 좌표로 펜을 움직이는 입력을 주입합니다.
     /// </summary>
-    /// <param name="x">X 좌표</param>
-    /// <param name="y">Y 좌표</param>
-    /// <param name="pressure">필압 (0.0f ~ 1.0f)</param>
-    public static void InjectPenMove(int x, int y, float pressure = 0.5f)
+    public static void InjectPenMove(int x, int y, float pressure = 0.5f, bool isBarrelButtonPressed = false, int tiltX = 0, int tiltY = 0)
     {
-        if (!_isPenDown) return; // 펜이 눌려있지 않으면 무시
-
-        var pointerInfo = CreatePointerPenInfo(x, y, pressure, POINTER_FLAGS.UPDATE);
+        if (!_isPenDown) return;
+        var pointerInfo = CreatePointerPenInfo(x, y, pressure, POINTER_FLAGS.UPDATE, isBarrelButtonPressed, tiltX, tiltY);
         InjectSyntheticPointerInput(_penDevice, new[] { pointerInfo }, 1);
     }
 
     /// <summary>
     /// 지정된 좌표에서 펜을 떼는 입력을 주입합니다.
     /// </summary>
-    /// <param name="x">X 좌표</param>
-    /// <param name="y">Y 좌표</param>
     public static void InjectPenUp(int x, int y)
     {
-        var pointerInfo = CreatePointerPenInfo(x, y, 0, POINTER_FLAGS.UP);
+        // 펜을 뗄 때는 압력, 버튼, 기울기 정보가 의미 없음
+        var pointerInfo = CreatePointerPenInfo(x, y, 0, POINTER_FLAGS.UP, false, 0, 0);
         InjectSyntheticPointerInput(_penDevice, new[] { pointerInfo }, 1);
+        _isPenDown = false;
+    }
+
+    /// <summary>
+    /// 지정된 좌표로 펜을 호버링(Hovering)하는 입력을 주입합니다.
+    /// 펜이 화면에 닿지 않은 채 커서만 움직이는 효과를 냅니다.
+    /// </summary>
+    /// <param name="x">X 좌표</param>
+    /// <param name="y">Y 좌표</param>
+    /// <param name="tiltX">X축 기울기 (-90 ~ +90)</param>
+    /// <param name="tiltY">Y축 기울기 (-90 ~ +90)</param>
+    public static void InjectPenHover(int x, int y, int tiltX = 0, int tiltY = 0)
+    {
+        var pointerInfo = new POINTER_TYPE_INFO { type = PointerInputType.PT_PEN };
+        ref var penInfo = ref pointerInfo.penInfo;
+
+        penInfo.pointerInfo.pointerType = PointerInputType.PT_PEN;
+        penInfo.pointerInfo.ptPixelLocation.x = x;
+        penInfo.pointerInfo.ptPixelLocation.y = y;
+        penInfo.pointerInfo.pointerId = 0;
+
+        // <<< 핵심: INRANGE 플래그만 설정하고 INCONTACT는 제외합니다.
+        penInfo.pointerInfo.pointerFlags = POINTER_FLAGS.UPDATE | POINTER_FLAGS.INRANGE;
+
+        // 호버링 중에도 기울기는 인식 가능합니다.
+        penInfo.penMask = PEN_MASK.NONE;
+        if (tiltX != 0)
+        {
+            penInfo.penMask |= PEN_MASK.TILT_X;
+            penInfo.tiltX = tiltX;
+        }
+        if (tiltY != 0)
+        {
+            penInfo.penMask |= PEN_MASK.TILT_Y;
+            penInfo.tiltY = tiltY;
+        }
+
+        InjectSyntheticPointerInput(_penDevice, new[] { pointerInfo }, 1);
+
+        // 호버링은 펜을 뗀 상태이므로 _isPenDown을 false로 유지합니다.
         _isPenDown = false;
     }
 
@@ -84,24 +117,43 @@ public static class PenInputInjector
 
     #region Private Helper
 
-    private static POINTER_TYPE_INFO CreatePointerPenInfo(int x, int y, float pressure, POINTER_FLAGS flags)
+    private static POINTER_TYPE_INFO CreatePointerPenInfo(int x, int y, float pressure, POINTER_FLAGS flags, bool isBarrelButtonPressed, int tiltX, int tiltY)
     {
         var pointerInfo = new POINTER_TYPE_INFO { type = PointerInputType.PT_PEN };
-        pointerInfo.penInfo.pointerInfo.pointerType = PointerInputType.PT_PEN;
-        pointerInfo.penInfo.pointerInfo.ptPixelLocation.x = x;
-        pointerInfo.penInfo.pointerInfo.ptPixelLocation.y = y;
-        pointerInfo.penInfo.pointerInfo.pointerId = 0;
+        ref var penInfo = ref pointerInfo.penInfo; // ref 키워드로 더 간결하게 사용
 
-        // DOWN 또는 UPDATE 시에는 접촉(INCONTACT)과 범위 내(INRANGE) 플래그가 필요
+        penInfo.pointerInfo.pointerType = PointerInputType.PT_PEN;
+        penInfo.pointerInfo.ptPixelLocation.x = x;
+        penInfo.pointerInfo.ptPixelLocation.y = y;
+        penInfo.pointerInfo.pointerId = 0;
+
         if (flags == POINTER_FLAGS.DOWN || flags == POINTER_FLAGS.UPDATE)
         {
             flags |= POINTER_FLAGS.INCONTACT | POINTER_FLAGS.INRANGE;
         }
-        pointerInfo.penInfo.pointerInfo.pointerFlags = flags;
+        penInfo.pointerInfo.pointerFlags = flags;
 
-        // 필압 설정
-        pointerInfo.penInfo.penMask = PEN_MASK.PRESSURE;
-        pointerInfo.penInfo.pressure = (uint)(pressure * 1024);
+        // 필압은 항상 사용
+        penInfo.penMask = PEN_MASK.PRESSURE;
+        penInfo.pressure = (uint)(pressure * 1024);
+
+        // <<< 추가된 부분: 배럴 버튼 처리
+        if (isBarrelButtonPressed)
+        {
+            penInfo.penFlags |= PEN_FLAGS.BARREL;
+        }
+
+        // <<< 추가된 부분: 기울기 처리
+        if (tiltX != 0)
+        {
+            penInfo.penMask |= PEN_MASK.TILT_X;
+            penInfo.tiltX = tiltX;
+        }
+        if (tiltY != 0)
+        {
+            penInfo.penMask |= PEN_MASK.TILT_Y;
+            penInfo.tiltY = tiltY;
+        }
 
         return pointerInfo;
     }
