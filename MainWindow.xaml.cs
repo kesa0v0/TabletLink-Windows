@@ -1,208 +1,178 @@
+using System;
+using System.Net;
+using System.Net.Sockets;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media.Imaging;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
-using System.ComponentModel;
-using System.IO;
-using System.Security.Cryptography;
-
 
 namespace TabletLink_WindowsApp
 {
     public partial class MainWindow : Window
     {
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StartCapture(FrameCallback frameCallback, int frameWidth, int frameHeight, int frameRate);
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.StdCall)]
-        public static extern void StopCapture();
-        [DllImport("ScreenCaptureLib.dll", CallingConvention = CallingConvention.Cdecl)]
-        public static extern IntPtr TestDLL();
+        private UdpPenReceiver _udpPenReceiver;
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct FrameData
-        {
-            public IntPtr data;
-            public int width;
-            public int height;
-            public int frameRate;
+        private int _androidDeviceWidth = 0;
+        private int _androidDeviceHeight = 0;
 
-            public int dataSize;
-            public long timestamp;
-        }
+        private int _monitorWidth = 0;
+        private int _monitorHeight = 0;
 
-        // Callback 델리게이트 정의
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void FrameCallback(FrameData frameData);
-        private static FrameCallback? frameCallbackInstance;
-        UDPServer server = new UDPServer();
-
-        private Stopwatch stopwatch = new Stopwatch(); // 시간 측정을 위한 스톱워치
-        private int frameCount = 0; // 초당 프레임 수 카운트
-
-
-        private WriteableBitmap? bitmap;
-        public bool isCapturing = false;
+        // Variables for aspect-ratio correct scaling
+        private float _scaleRatio = 1.0f;
+        private float _offsetX = 0f;
+        private float _offsetY = 0f;
 
         public MainWindow()
         {
             InitializeComponent();
+            this.Closing += MainWindow_Closing;
+            this.Loaded += Window_Loaded;
 
-            frameCallbackInstance = new FrameCallback(frameCallback);
-
-        }
-
-        #region UI
-
-        public void UpdateStatusText(string text)
-        {
-            this.Dispatcher.Invoke(() =>
+            try
             {
-                this.StatusText.Text = text;
-            });
-        }
-
-        public void CloseWindow(object sender, RoutedEventArgs e)
-        {
-            this.Close();
-        }
-
-
-        public void MinimizeWindow(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        public void OpenSettings(object sender, RoutedEventArgs e)
-        {
-
-        }
-
-        public void Window_MouseLeftButtonDown(object sender, RoutedEventArgs e)
-        {
-            this.DragMove();
-        }
-
-        protected override void OnClosing(CancelEventArgs e)
-        {
-            StopCapture();
-            server.CloseServer();
-            base.OnClosing(e);
-        }
-
-        // 버튼 입력
-        private void Connect_Click(object sender, RoutedEventArgs e)
-        {
-            Button button = (Button)sender;
-            string buttonName = button.Name;
-            string? buttonText = button.Content.ToString();
-
-            if (!isCapturing)
-            {
-                server.StartServer();
-                StartCapture(frameCallbackInstance, 1920, 1080, 1);
-                isCapturing = true;
-                //sendTestData();
+                PenInputInjector.Initialize();
             }
-            else
+            catch (Exception ex)
             {
-                server.CloseServer();
-                StopCapture();
-                isCapturing = false;
-            }
-        }
-
-        public void sendTestData()
-        {
-            // 비동기적으로 1초마다 데이터 전송
-
-            Task.Run(async () =>
-            {
-                while (isCapturing)
-                {
-                    FrameData testData = new FrameData();
-                    testData.dataSize = 10 * 10 * 4;
-                    testData.data = Marshal.AllocHGlobal(testData.dataSize);
-                    testData.width = RandomNumberGenerator.GetInt32(12321);
-                    testData.height = 10;
-                    testData.frameRate = 1;
-                    testData.timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-                    server.SendData(StructToBytes(testData));
-                    await Task.Delay(1000);
-                }
-            });
-
-        }
-        public static int ReverseBytes(int value)
-        {
-            byte[] bytes = BitConverter.GetBytes(value);
-            Array.Reverse(bytes);
-            return BitConverter.ToInt32(bytes, 0);
-        }
-
-        public static long ReverseBytes(long value)
-        {
-            byte[] bytes = BitConverter.GetBytes(value);
-            Array.Reverse(bytes);
-            return BitConverter.ToInt64(bytes, 0);
-        }
-        // 엔디언 변환 함수
-        public static int SwapEndian(int value) => BitConverter.IsLittleEndian ? ReverseBytes(value) : value;
-        public static long SwapEndian(long value) => BitConverter.IsLittleEndian ? ReverseBytes(value) : value;
-
-        public static byte[] StructToBytes(FrameData frameData)
-        {
-            using (MemoryStream stream = new MemoryStream())
-            using (BinaryWriter writer = new BinaryWriter(stream))
-            {
-                writer.Write(SwapEndian(frameData.width));
-                writer.Write(SwapEndian(frameData.height));
-                writer.Write(SwapEndian(frameData.frameRate));
-                writer.Write(SwapEndian(frameData.dataSize));
-                writer.Write(SwapEndian(frameData.timestamp));
-
-                if (frameData.data != IntPtr.Zero && frameData.dataSize > 0)
-                {
-                    byte[] dataArray = new byte[frameData.dataSize];
-                    Marshal.Copy(frameData.data, dataArray, 0, frameData.dataSize);
-                    writer.Write(dataArray);
-                }
-                return stream.ToArray();
-            }
-
-        }
-
-        // Callback 함수 구현
-        void frameCallback(FrameData frameData)
-        {
-            if(isCapturing == false)
+                Log($"Critical Error: {ex.Message}");
+                MessageBox.Show($"Could not initialize Pen Input Injector: {ex.Message}\nThe application will now close.", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown();
                 return;
-            
-
-            long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-            // 네이티브 측 타임스탬프 읽기
-            byte[] frameDataArray = new byte[frameData.dataSize];
-            Marshal.Copy(frameData.data, frameDataArray, 0, frameDataArray.Length);
-
-            long nativeTimestamp = frameData.timestamp; // 네이티브 측 타임스탬프
-            long delay = currentTime - nativeTimestamp; // C++ → C# 전달 지연 시간
-            int datasize = frameDataArray.Length;
-
-            // FPS 카운트 증가
-            frameCount++;
-            if (stopwatch.ElapsedMilliseconds >= 1000)
-            {
-                UpdateStatusText($"FPS: {frameCount}/{frameData.frameRate}, delay: {delay}, datasize: {datasize}");
-                frameCount = 0;
-                stopwatch.Restart();
             }
 
-            server.SendData(StructToBytes(frameData));
+            _udpPenReceiver = new UdpPenReceiver();
+            _udpPenReceiver.OnDeviceInfoReceived += UdpPenReceiver_OnDeviceInfoReceived;
+            _udpPenReceiver.OnPenDataReceived += UdpPenReceiver_OnPenDataReceived;
+            Log($"Local IP Address: {GetLocalIPAddress()}");
+            _udpPenReceiver.StartListening(9999);
         }
 
-    }
+        private void UdpPenReceiver_OnDeviceInfoReceived(int width, int height)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _androidDeviceWidth = width;
+                _androidDeviceHeight = height;
+                Log($"[UDP] Device resolution received: {width} x {height}");
+                CalculateMapping();
+            });
+        }
 
-    #endregion
+        private void UdpPenReceiver_OnPenDataReceived(UdpPenData data)
+        {
+            // Apply aspect-ratio correct scaling and offset
+            int scaledX = (int)(data.X * _scaleRatio + _offsetX);
+            int scaledY = (int)(data.Y * _scaleRatio + _offsetY);
+
+            // Call PenInputInjector based on the action type
+            // (action: 0=Down, 1=Move, 2=Up, 3=Hover)
+            switch (data.Action)
+            {
+                case 0: // Down
+                    PenInputInjector.InjectPenDown(scaledX, scaledY, data.Pressure, data.IsBarrelPressed, data.TiltX, data.TiltY);
+                    break;
+                case 1: // Move
+                    PenInputInjector.InjectPenMove(scaledX, scaledY, data.Pressure, data.IsBarrelPressed, data.TiltX, data.TiltY);
+                    break;
+                case 2: // Up
+                    PenInputInjector.InjectPenUp(scaledX, scaledY);
+                    break;
+                case 3: // Hover
+                    PenInputInjector.InjectPenHover(scaledX, scaledY, data.IsBarrelPressed, data.TiltX, data.TiltY);
+                    break;
+            }
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            GetMonitorInfo();
+        }
+
+        private void GetMonitorInfo()
+        {
+            // Get the DPI scaling from the current window
+            PresentationSource source = PresentationSource.FromVisual(this);
+            double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+            // Get the logical screen size
+            double logicalScreenWidth = SystemParameters.PrimaryScreenWidth;
+            double logicalScreenHeight = SystemParameters.PrimaryScreenHeight;
+
+            // Calculate the actual physical pixel resolution
+            _monitorWidth = (int)(logicalScreenWidth * dpiX);
+            _monitorHeight = (int)(logicalScreenHeight * dpiY);
+
+            Log(
+                $"Logical Resolution: {logicalScreenWidth}x{logicalScreenHeight}\n" +
+                $"DPI Scale: {dpiX * 100}%\n" +
+                $"Actual Resolution: {_monitorWidth}x{_monitorHeight}"
+            );
+
+            CalculateMapping();
+        }
+
+        /// <summary>
+        /// Calculates the scaling ratio and offset to map the Android screen to the monitor
+        /// while preserving the aspect ratio (letterboxing).
+        /// </summary>
+        private void CalculateMapping()
+        {
+            if (_monitorWidth == 0 || _monitorHeight == 0 || _androidDeviceWidth == 0 || _androidDeviceHeight == 0)
+            {
+                return;
+            }
+
+            float monitorAspect = (float)_monitorWidth / _monitorHeight;
+            float androidAspect = (float)_androidDeviceWidth / _androidDeviceHeight;
+
+            if (monitorAspect > androidAspect) // Monitor is wider than the tablet
+            {
+                _scaleRatio = (float)_monitorHeight / _androidDeviceHeight;
+                float scaledAndroidWidth = _androidDeviceWidth * _scaleRatio;
+                _offsetX = (_monitorWidth - scaledAndroidWidth) / 2f;
+                _offsetY = 0f;
+            }
+            else // Monitor is narrower or has the same aspect ratio
+            {
+                _scaleRatio = (float)_monitorWidth / _androidDeviceWidth;
+                float scaledAndroidHeight = _androidDeviceHeight * _scaleRatio;
+                _offsetX = 0f;
+                _offsetY = (_monitorHeight - scaledAndroidHeight) / 2f;
+            }
+            Log($"Calculated new mapping: Scale={_scaleRatio:F2}, OffsetX={_offsetX:F0}, OffsetY={_offsetY:F0}");
+        }
+
+        private void Log(string message)
+        {
+            Dispatcher.InvokeAsync(() => {
+                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                LogText.Text += $"[{timestamp}] {message}\n";
+                Console.WriteLine($"[{timestamp}] {message}");
+                LogScrollViewer.ScrollToEnd();
+            });
+        }
+
+        private string GetLocalIPAddress()
+        {
+            try
+            {
+                using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+                {
+                    // This doesn't actually send data, it just determines the best outbound IP.
+                    socket.Connect("8.8.8.8", 65530);
+                    IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+                    return endPoint?.Address.ToString() ?? "Not found";
+                }
+            }
+            catch (SocketException)
+            {
+                return "Not found (No network?)";
+            }
+        }
+
+        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            PenInputInjector.Uninitialize();
+            _udpPenReceiver?.StopListening();
+        }
+    }
 }
