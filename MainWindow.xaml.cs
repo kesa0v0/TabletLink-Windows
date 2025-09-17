@@ -2,29 +2,28 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Windows;
+using System.Windows.Media;
 
 namespace TabletLink_WindowsApp
 {
     public partial class MainWindow : Window
     {
-        private UdpPenReceiver _udpPenReceiver;
+        private UdpPenReceiver udpPenReceiver;
 
-        private int _androidDeviceWidth = 0;
-        private int _androidDeviceHeight = 0;
+        private int androidDeviceWidth = 0;
+        private int androidDeviceHeight = 0;
 
-        private int _monitorWidth = 0;
-        private int _monitorHeight = 0;
+        private int monitorWidth = 0;
+        private int monitorHeight = 0;
 
-        // Variables for aspect-ratio correct scaling
-        private float _scaleRatio = 1.0f;
-        private float _offsetX = 0f;
-        private float _offsetY = 0f;
+        // For aspect ratio correction
+        private float scale = 1.0f;
+        private float offsetX = 0f;
+        private float offsetY = 0f;
 
         public MainWindow()
         {
             InitializeComponent();
-            this.Closing += MainWindow_Closing;
-            this.Loaded += Window_Loaded;
 
             try
             {
@@ -32,38 +31,38 @@ namespace TabletLink_WindowsApp
             }
             catch (Exception ex)
             {
-                Log($"Critical Error: {ex.Message}");
-                MessageBox.Show($"Could not initialize Pen Input Injector: {ex.Message}\nThe application will now close.", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Log($"ERROR: Failed to initialize PenInputInjector: {ex.Message}");
+                MessageBox.Show($"Fatal Error: Could not initialize Pen Input.\n{ex.Message}\nThe application will now close.", "Initialization Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 Application.Current.Shutdown();
                 return;
             }
 
-            _udpPenReceiver = new UdpPenReceiver();
-            _udpPenReceiver.OnDeviceInfoReceived += UdpPenReceiver_OnDeviceInfoReceived;
-            _udpPenReceiver.OnPenDataReceived += UdpPenReceiver_OnPenDataReceived;
+            udpPenReceiver = new UdpPenReceiver();
+            udpPenReceiver.OnDeviceInfoReceived += UdpPenReceiver_OnDeviceInfoReceived;
+            udpPenReceiver.OnPenDataReceived += UdpPenReceiver_OnPenDataReceived;
             Log($"Local IP Address: {GetLocalIPAddress()}");
-            _udpPenReceiver.StartListening(9999);
+            udpPenReceiver.StartListening(9999);
         }
 
         private void UdpPenReceiver_OnDeviceInfoReceived(int width, int height)
         {
             Dispatcher.Invoke(() =>
             {
-                _androidDeviceWidth = width;
-                _androidDeviceHeight = height;
-                Log($"[UDP] Device resolution received: {width} x {height}");
+                androidDeviceWidth = width;
+                androidDeviceHeight = height;
+                Log($"[UDP] Device info received: {width} x {height}");
                 CalculateMapping();
             });
         }
 
         private void UdpPenReceiver_OnPenDataReceived(UdpPenData data)
         {
-            // Apply aspect-ratio correct scaling and offset
-            int scaledX = (int)(data.X * _scaleRatio + _offsetX);
-            int scaledY = (int)(data.Y * _scaleRatio + _offsetY);
+            Log($"[UDP RECV] Action:{data.Action}, X:{data.X:F2}, Y:{data.Y:F2}, P:{data.Pressure:F2}, Barrel:{data.IsBarrelPressed}, TiltX:{data.TiltX}, TiltY:{data.TiltY}");
 
-            // Call PenInputInjector based on the action type
-            // (action: 0=Down, 1=Move, 2=Up, 3=Hover)
+            // Scaling with aspect ratio correction
+            int scaledX = (int)(data.X * scale + offsetX);
+            int scaledY = (int)(data.Y * scale + offsetY);
+
             switch (data.Action)
             {
                 case 0: // Down
@@ -84,71 +83,70 @@ namespace TabletLink_WindowsApp
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             GetMonitorInfo();
+            CalculateMapping();
         }
 
         private void GetMonitorInfo()
         {
-            // Get the DPI scaling from the current window
             PresentationSource source = PresentationSource.FromVisual(this);
-            double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-            double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-
-            // Get the logical screen size
-            double logicalScreenWidth = SystemParameters.PrimaryScreenWidth;
-            double logicalScreenHeight = SystemParameters.PrimaryScreenHeight;
-
-            // Calculate the actual physical pixel resolution
-            _monitorWidth = (int)(logicalScreenWidth * dpiX);
-            _monitorHeight = (int)(logicalScreenHeight * dpiY);
-
-            Log(
-                $"Logical Resolution: {logicalScreenWidth}x{logicalScreenHeight}\n" +
-                $"DPI Scale: {dpiX * 100}%\n" +
-                $"Actual Resolution: {_monitorWidth}x{_monitorHeight}"
-            );
-
-            CalculateMapping();
+            if (source?.CompositionTarget != null)
+            {
+                Matrix m = source.CompositionTarget.TransformToDevice;
+                double dpiX = m.M11;
+                double dpiY = m.M22;
+                monitorWidth = (int)(SystemParameters.PrimaryScreenWidth * dpiX);
+                monitorHeight = (int)(SystemParameters.PrimaryScreenHeight * dpiY);
+            }
+            else // Fallback
+            {
+                monitorWidth = (int)SystemParameters.PrimaryScreenWidth;
+                monitorHeight = (int)SystemParameters.PrimaryScreenHeight;
+            }
+            Log($"Monitor Resolution: {monitorWidth} x {monitorHeight}");
         }
 
-        /// <summary>
-        /// Calculates the scaling ratio and offset to map the Android screen to the monitor
-        /// while preserving the aspect ratio (letterboxing).
-        /// </summary>
         private void CalculateMapping()
         {
-            if (_monitorWidth == 0 || _monitorHeight == 0 || _androidDeviceWidth == 0 || _androidDeviceHeight == 0)
+            if (androidDeviceWidth == 0 || androidDeviceHeight == 0 || monitorWidth == 0 || monitorHeight == 0)
             {
                 return;
             }
 
-            float monitorAspect = (float)_monitorWidth / _monitorHeight;
-            float androidAspect = (float)_androidDeviceWidth / _androidDeviceHeight;
+            float monitorAspectRatio = (float)monitorWidth / monitorHeight;
+            float tabletAspectRatio = (float)androidDeviceWidth / androidDeviceHeight;
 
-            if (monitorAspect > androidAspect) // Monitor is wider than the tablet
+            if (monitorAspectRatio > tabletAspectRatio)
             {
-                _scaleRatio = (float)_monitorHeight / _androidDeviceHeight;
-                float scaledAndroidWidth = _androidDeviceWidth * _scaleRatio;
-                _offsetX = (_monitorWidth - scaledAndroidWidth) / 2f;
-                _offsetY = 0f;
+                // Monitor is wider (letterbox)
+                scale = (float)monitorHeight / androidDeviceHeight;
+                float scaledTabletWidth = androidDeviceWidth * scale;
+                offsetX = (monitorWidth - scaledTabletWidth) / 2f;
+                offsetY = 0f;
             }
-            else // Monitor is narrower or has the same aspect ratio
+            else
             {
-                _scaleRatio = (float)_monitorWidth / _androidDeviceWidth;
-                float scaledAndroidHeight = _androidDeviceHeight * _scaleRatio;
-                _offsetX = 0f;
-                _offsetY = (_monitorHeight - scaledAndroidHeight) / 2f;
+                // Tablet is wider or same aspect ratio (pillarbox)
+                scale = (float)monitorWidth / androidDeviceWidth;
+                float scaledTabletHeight = androidDeviceHeight * scale;
+                offsetX = 0f;
+                offsetY = (monitorHeight - scaledTabletHeight) / 2f;
             }
-            Log($"Calculated new mapping: Scale={_scaleRatio:F2}, OffsetX={_offsetX:F0}, OffsetY={_offsetY:F0}");
+
+            Log($"Calculated Mapping: Scale={scale:F4}, OffsetX={offsetX:F2}, OffsetY={offsetY:F2}");
         }
 
         private void Log(string message)
         {
-            Dispatcher.InvokeAsync(() => {
-                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-                LogText.Text += $"[{timestamp}] {message}\n";
-                Console.WriteLine($"[{timestamp}] {message}");
-                LogScrollViewer.ScrollToEnd();
-            });
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.InvokeAsync(() => Log(message));
+                return;
+            }
+            string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+            string formattedMessage = $"[{timestamp}] {message}\n";
+            //LogText.AppendText(formattedMessage);
+            Console.Write(formattedMessage); // Also write to console
+            LogScrollViewer.ScrollToEnd();
         }
 
         private string GetLocalIPAddress()
@@ -157,7 +155,6 @@ namespace TabletLink_WindowsApp
             {
                 using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
                 {
-                    // This doesn't actually send data, it just determines the best outbound IP.
                     socket.Connect("8.8.8.8", 65530);
                     IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
                     return endPoint?.Address.ToString() ?? "Not found";
@@ -165,14 +162,15 @@ namespace TabletLink_WindowsApp
             }
             catch (SocketException)
             {
-                return "Not found (No network?)";
+                return "Not found (no network)";
             }
         }
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             PenInputInjector.Uninitialize();
-            _udpPenReceiver?.StopListening();
+            udpPenReceiver?.StopListening();
         }
     }
 }
+

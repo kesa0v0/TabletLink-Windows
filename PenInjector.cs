@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 /// <summary>
@@ -16,8 +17,9 @@ using System.Runtime.InteropServices;
 /// </summary>
 public static class PenInputInjector
 {
-    private static NativeMethods.HSYNTHETICPOUTERDEVICE _penDevice;
+    private static NativeMethods.HSYNTHETICPOINTERDEVICE _penDevice;
     private static bool _isPenDown = false;
+    private static bool _previousBarrelButtonState = false;
 
     #region Public Methods
 
@@ -87,7 +89,7 @@ public static class PenInputInjector
     public static void InjectPenUp(int x, int y)
     {
         if (!_isPenDown) return;
-        // Pressure, button, and tilt are irrelevant on pen up.
+        // When the pen is lifted, the barrel button is implicitly released.
         var pointerInfo = CreatePointerPenInfo(x, y, 0, NativeMethods.POINTER_FLAGS.UP, false, 0, 0);
         NativeMethods.InjectSyntheticPointerInput(_penDevice, new[] { pointerInfo }, 1);
         _isPenDown = false;
@@ -109,10 +111,8 @@ public static class PenInputInjector
         // Core of hovering: INRANGE flag is set, but INCONTACT is not.
         penInfo.pointerInfo.pointerFlags = NativeMethods.POINTER_FLAGS.UPDATE | NativeMethods.POINTER_FLAGS.INRANGE;
 
-        if (isBarrelButtonPressed)
-        {
-            penInfo.pointerInfo.pointerFlags |= NativeMethods.POINTER_FLAGS.FIRSTBUTTON; // Use standard button flags for hover clicks
-        }
+        // Correctly handle barrel button state transitions vs. steady state.
+        SetBarrelButtonState(ref penInfo.pointerInfo, ref penInfo.penFlags, isBarrelButtonPressed);
 
         penInfo.penMask = NativeMethods.PEN_MASK.NONE;
         if (tiltX != 0)
@@ -126,11 +126,6 @@ public static class PenInputInjector
             penInfo.tiltY = tiltY;
         }
 
-        if (isBarrelButtonPressed)
-        {
-            penInfo.penFlags |= NativeMethods.PEN_FLAGS.BARREL;
-        }
-
         NativeMethods.InjectSyntheticPointerInput(_penDevice, new[] { pointerInfo }, 1);
 
         // Hovering implies the pen is not in contact with the screen.
@@ -139,8 +134,11 @@ public static class PenInputInjector
 
     #endregion
 
-    #region Private Helper
+    #region Private Helpers
 
+    /// <summary>
+    /// Creates a POINTER_TYPE_INFO structure for pen input.
+    /// </summary>
     private static NativeMethods.POINTER_TYPE_INFO CreatePointerPenInfo(int x, int y, float pressure, NativeMethods.POINTER_FLAGS flags, bool isBarrelButtonPressed, int tiltX, int tiltY)
     {
         var pointerInfo = new NativeMethods.POINTER_TYPE_INFO { type = NativeMethods.PointerInputType.PT_PEN };
@@ -151,21 +149,17 @@ public static class PenInputInjector
         penInfo.pointerInfo.ptPixelLocation.y = y;
         penInfo.pointerInfo.pointerId = 0;
 
-        // For Down and Update events, the pen must be in range and in contact.
         if (flags.HasFlag(NativeMethods.POINTER_FLAGS.DOWN) || flags.HasFlag(NativeMethods.POINTER_FLAGS.UPDATE))
         {
             flags |= NativeMethods.POINTER_FLAGS.INCONTACT | NativeMethods.POINTER_FLAGS.INRANGE;
         }
         penInfo.pointerInfo.pointerFlags = flags;
 
-        // Always include pressure information.
         penInfo.penMask = NativeMethods.PEN_MASK.PRESSURE;
         penInfo.pressure = (uint)(Math.Max(0, Math.Min(1, pressure)) * 1024);
 
-        if (isBarrelButtonPressed)
-        {
-            penInfo.penFlags |= NativeMethods.PEN_FLAGS.BARREL;
-        }
+        // Correctly handle barrel button state transitions vs. steady state.
+        SetBarrelButtonState(ref penInfo.pointerInfo, ref penInfo.penFlags, isBarrelButtonPressed);
 
         if (tiltX != 0)
         {
@@ -181,30 +175,86 @@ public static class PenInputInjector
         return pointerInfo;
     }
 
+    /// <summary>
+    /// Sets the barrel button state according to Win32 API rules, distinguishing
+    /// between a state transition (press/release) and a steady state (held).
+    /// </summary>
+    private static void SetBarrelButtonState(ref NativeMethods.POINTER_INFO pointerInfo, ref NativeMethods.PEN_FLAGS penFlags, bool isBarrelButtonPressed)
+    {
+        // Default to no change
+        pointerInfo.ButtonChangeType = (int)NativeMethods.POINTER_BUTTON_CHANGE_TYPE.POINTER_CHANGE_NONE;
+
+        string logMessage = $"[INJECT] Barrel: current={isBarrelButtonPressed}, prev={_previousBarrelButtonState}. ";
+
+        // Check for a state transition
+        if (isBarrelButtonPressed != _previousBarrelButtonState)
+        {
+            // If the state changed, report the transition via ButtonChangeType.
+            if (isBarrelButtonPressed)
+            {
+                pointerInfo.ButtonChangeType = (int)NativeMethods.POINTER_BUTTON_CHANGE_TYPE.POINTER_CHANGE_SECONDBUTTON_DOWN;
+                logMessage += "ChangeType=DOWN. ";
+            }
+            else
+            {
+                pointerInfo.ButtonChangeType = (int)NativeMethods.POINTER_BUTTON_CHANGE_TYPE.POINTER_CHANGE_SECONDBUTTON_UP;
+                logMessage += "ChangeType=UP. ";
+            }
+        }
+        else
+        {
+            // If the state is the same as before (steady state), report it via pointerFlags.
+            if (isBarrelButtonPressed)
+            {
+                pointerInfo.pointerFlags |= NativeMethods.POINTER_FLAGS.SECONDBUTTON;
+                logMessage += "State=SECONDBUTTON flag set. ";
+            }
+        }
+
+        // The PEN_FLAGS.BARREL should always reflect the current physical state.
+        if (isBarrelButtonPressed)
+        {
+            penFlags |= NativeMethods.PEN_FLAGS.BARREL;
+        }
+
+        Console.WriteLine(logMessage + $"Final PointerFlags={pointerInfo.pointerFlags}");
+
+        // Update the state for the next event.
+        _previousBarrelButtonState = isBarrelButtonPressed;
+    }
+
     #endregion
 
     #region P/Invoke Declarations
 
-    // Encapsulating P/Invoke definitions in a private static class is a common best practice.
     private static class NativeMethods
     {
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        internal static extern HSYNTHETICPOUTERDEVICE CreateSyntheticPointerDevice(
+        internal static extern HSYNTHETICPOINTERDEVICE CreateSyntheticPointerDevice(
             PointerInputType pointerType, uint maxCount, POINTER_FEEDBACK_MODE mode);
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         internal static extern bool InjectSyntheticPointerInput(
-            HSYNTHETICPOUTERDEVICE device, [In] POINTER_TYPE_INFO[] pointerInfo, uint count);
+            HSYNTHETICPOINTERDEVICE device, [In] POINTER_TYPE_INFO[] pointerInfo, uint count);
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        internal static extern void DestroySyntheticPointerDevice(HSYNTHETICPOUTERDEVICE device);
+        internal static extern void DestroySyntheticPointerDevice(HSYNTHETICPOINTERDEVICE device);
 
         internal enum POINTER_FEEDBACK_MODE { DEFAULT = 1, INDIRECT = 2, NONE = 3 }
 
         internal enum PointerInputType { PT_POINTER = 1, PT_TOUCH = 2, PT_PEN = 3, PT_MOUSE = 4 }
 
+        internal enum POINTER_BUTTON_CHANGE_TYPE
+        {
+            POINTER_CHANGE_NONE,
+            POINTER_CHANGE_FIRSTBUTTON_DOWN,
+            POINTER_CHANGE_FIRSTBUTTON_UP,
+            POINTER_CHANGE_SECONDBUTTON_DOWN,
+            POINTER_CHANGE_SECONDBUTTON_UP
+        }
+
         [StructLayout(LayoutKind.Sequential)]
-        internal struct HSYNTHETICPOUTERDEVICE { public IntPtr handle; }
+        internal struct HSYNTHETICPOINTERDEVICE { public IntPtr handle; }
 
         [StructLayout(LayoutKind.Sequential)]
         internal struct POINT { public int x; public int y; }
@@ -242,7 +292,7 @@ public static class PenInputInjector
             public int inputData;
             public uint dwKeyStates;
             public ulong PerformanceCount;
-            public int ButtonChangeType;
+            public int ButtonChangeType; // This field is crucial for the fix.
         }
 
         [Flags]
@@ -272,3 +322,4 @@ public static class PenInputInjector
     }
     #endregion
 }
+

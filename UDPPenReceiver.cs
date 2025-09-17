@@ -7,22 +7,30 @@ using System.Threading.Tasks;
 namespace TabletLink_WindowsApp
 {
     /// <summary>
-    /// Receives pen data and device info from an Android device over UDP.
+    /// Listens for UDP packets from the Android device, parses them,
+    /// and raises events for pen data and device information.
     /// </summary>
     public class UdpPenReceiver
     {
-        private UdpClient _udpClient;
-        private CancellationTokenSource _cancellationTokenSource;
+        private UdpClient udpClient;
+        private CancellationTokenSource cancellationTokenSource;
 
-        // Event for when device info (screen size) is received.
+        /// <summary>
+        /// Fired when device information (screen size) is received.
+        /// Provides width and height.
+        /// </summary>
         public event Action<int, int> OnDeviceInfoReceived;
-        // Event for when pen data is received.
+
+        /// <summary>
+        /// Fired when pen data is received.
+        /// Provides a UdpPenData object with the raw coordinates and state.
+        /// </summary>
         public event Action<UdpPenData> OnPenDataReceived;
 
-        // Stores the endpoint of the Android device to send responses back.
-        private IPEndPoint _androidEndpoint;
+        private IPEndPoint androidEndpoint;
 
-        // Packet type constants (must match the Android app).
+        // Packet type constants must match the client implementation.
+        // Using byte for unsigned values 0-255.
         private const byte PACKET_TYPE_PEN_DATA_MIN = 0;
         private const byte PACKET_TYPE_PEN_DATA_MAX = 3;
         private const byte PACKET_TYPE_DEVICE_INFO_REQ = 255;
@@ -30,21 +38,28 @@ namespace TabletLink_WindowsApp
         private const byte PACKET_TYPE_HEARTBEAT_PING = 253;
         private const byte PACKET_TYPE_HEARTBEAT_PONG = 252;
 
+        /// <summary>
+        /// Starts listening for UDP packets on a background thread.
+        /// </summary>
+        /// <param name="port">The port to listen on.</param>
         public void StartListening(int port = 9999)
         {
-            if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested) return;
+            if (cancellationTokenSource != null && !cancellationTokenSource.IsCancellationRequested) return;
 
-            _udpClient = new UdpClient(port);
-            _cancellationTokenSource = new CancellationTokenSource();
-            var token = _cancellationTokenSource.Token;
+            udpClient = new UdpClient(port);
+            cancellationTokenSource = new CancellationTokenSource();
+            var token = cancellationTokenSource.Token;
 
             Task.Run(() => ListenLoop(token), token);
         }
 
+        /// <summary>
+        /// Stops listening and closes the UDP client.
+        /// </summary>
         public void StopListening()
         {
-            _cancellationTokenSource?.Cancel();
-            _udpClient?.Close();
+            cancellationTokenSource?.Cancel();
+            udpClient?.Close();
         }
 
         private void ListenLoop(CancellationToken token)
@@ -53,13 +68,12 @@ namespace TabletLink_WindowsApp
             {
                 while (!token.IsCancellationRequested)
                 {
-                    // This allows receiving data from any device.
                     IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
-                    byte[] receivedBytes = _udpClient.Receive(ref remoteEP);
+                    byte[] receivedBytes = udpClient.Receive(ref remoteEP);
 
-                    if (_androidEndpoint == null || !_androidEndpoint.Equals(remoteEP))
+                    if (androidEndpoint == null || !androidEndpoint.Equals(remoteEP))
                     {
-                        _androidEndpoint = remoteEP;
+                        androidEndpoint = remoteEP;
                     }
 
                     ProcessPacket(receivedBytes);
@@ -67,7 +81,7 @@ namespace TabletLink_WindowsApp
             }
             catch (SocketException e) when (e.SocketErrorCode == SocketError.Interrupted || token.IsCancellationRequested)
             {
-                // This exception is expected when StopListening is called, so we can ignore it.
+                // Ignore exceptions caused by stopping the listener.
             }
             catch (Exception e)
             {
@@ -79,21 +93,24 @@ namespace TabletLink_WindowsApp
         {
             if (data.Length == 0) return;
 
-            byte packetType = data[0];
+            byte packetHeader = data[0];
 
-            // Pen Data Packet (17 bytes)
-            if (data.Length == 17 && packetType >= PACKET_TYPE_PEN_DATA_MIN && packetType <= PACKET_TYPE_PEN_DATA_MAX)
+            // --- FIX ---
+            // Instead of checking the entire header byte (which includes flags),
+            // we now check only the lower 4 bits which represent the action type.
+            // 플래그가 포함된 전체 헤더 바이트 대신, 실제 액션 타입을 나타내는 하위 4비트만 확인하도록 수정합니다.
+            byte actionType = (byte)(packetHeader & 0x0F);
+
+            if (data.Length == 17 && actionType >= PACKET_TYPE_PEN_DATA_MIN && actionType <= PACKET_TYPE_PEN_DATA_MAX)
             {
                 ProcessPenDataPacket(data);
             }
-            // Device Info Request Packet (13 bytes)
-            else if (data.Length == 13 && packetType == PACKET_TYPE_DEVICE_INFO_REQ)
+            else if (data.Length == 13 && packetHeader == PACKET_TYPE_DEVICE_INFO_REQ)
             {
                 ProcessDeviceInfoPacket(data);
                 SendControlPacket(PACKET_TYPE_DEVICE_INFO_ACK);
             }
-            // Heartbeat Ping Packet (1 byte)
-            else if (data.Length == 1 && packetType == PACKET_TYPE_HEARTBEAT_PING)
+            else if (data.Length == 1 && packetHeader == PACKET_TYPE_HEARTBEAT_PING)
             {
                 SendControlPacket(PACKET_TYPE_HEARTBEAT_PONG);
             }
@@ -101,28 +118,25 @@ namespace TabletLink_WindowsApp
 
         private void ProcessPenDataPacket(byte[] data)
         {
-            /*
-             * Pen Data Packet Structure (17 bytes, Little Endian)
-             * --------------------------------------------------
-             * Offset | Length | Description
-             * --------------------------------------------------
-             * 0      | 1      | Action (lower 4 bits), IsBarrelPressed (5th bit)
-             * 1      | 4      | X (float)
-             * 5      | 4      | Y (float)
-             * 9      | 4      | Pressure (float)
-             * 13     | 2      | TiltX (short)
-             * 15     | 2      | TiltY (short)
-             */
             byte actionAndFlags = data[0];
+            byte action = (byte)(actionAndFlags & 0x0F); // Lower 4 bits for action
+            bool isBarrelPressed = (actionAndFlags & (1 << 4)) != 0; // 5th bit for barrel button
+
+            float x = BitConverter.ToSingle(data, 1);
+            float y = BitConverter.ToSingle(data, 5);
+            float pressure = BitConverter.ToSingle(data, 9);
+            short tiltX = BitConverter.ToInt16(data, 13);
+            short tiltY = BitConverter.ToInt16(data, 15);
+
             OnPenDataReceived?.Invoke(new UdpPenData
             {
-                Action = (byte)(actionAndFlags & 0x0F), // Lower 4 bits for action
-                IsBarrelPressed = (actionAndFlags & (1 << 4)) != 0, // 5th bit for barrel button
-                X = BitConverter.ToSingle(data, 1),
-                Y = BitConverter.ToSingle(data, 5),
-                Pressure = BitConverter.ToSingle(data, 9),
-                TiltX = BitConverter.ToInt16(data, 13),
-                TiltY = BitConverter.ToInt16(data, 15)
+                Action = action,
+                X = x,
+                Y = y,
+                Pressure = pressure,
+                IsBarrelPressed = isBarrelPressed,
+                TiltX = tiltX,
+                TiltY = tiltY
             });
         }
 
@@ -135,20 +149,19 @@ namespace TabletLink_WindowsApp
 
         private void SendControlPacket(byte packetType)
         {
-            if (_androidEndpoint == null) return;
+            if (androidEndpoint == null) return;
 
             byte[] packet = { packetType };
-            _udpClient.Send(packet, packet.Length, _androidEndpoint);
+            udpClient.Send(packet, packet.Length, androidEndpoint);
         }
     }
 
     /// <summary>
-    /// A struct to hold parsed pen data from a UDP packet.
-    /// Using a struct avoids heap allocation for each packet.
+    /// Data structure for received pen events.
     /// </summary>
-    public struct UdpPenData
+    public class UdpPenData
     {
-        public byte Action { get; set; }
+        public byte Action { get; set; } // 0:Down, 1:Move, 2:Up, 3:Hover
         public float X { get; set; }
         public float Y { get; set; }
         public float Pressure { get; set; }
@@ -157,3 +170,4 @@ namespace TabletLink_WindowsApp
         public short TiltY { get; set; }
     }
 }
+
