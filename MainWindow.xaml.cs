@@ -59,23 +59,25 @@ namespace TabletLink_WindowsApp
         {
             Log($"[UDP RECV] Action:{data.Action}, X:{data.X:F2}, Y:{data.Y:F2}, P:{data.Pressure:F2}, Barrel:{data.IsBarrelPressed}, TiltX:{data.TiltX}, TiltY:{data.TiltY}");
 
-            // Scaling with aspect ratio correction
             int scaledX = (int)(data.X * scale + offsetX);
             int scaledY = (int)(data.Y * scale + offsetY);
 
             switch (data.Action)
             {
                 case 0: // Down
-                    PenInputInjector.InjectPenDown(scaledX, scaledY, data.Pressure, data.IsBarrelPressed, data.TiltX, data.TiltY);
+                    PenInputInjector.InjectPenDown(scaledX, scaledY, data.Pressure, data.IsBarrelPressed,
+                        (int)data.TiltX, (int)data.TiltY); // <--- (int)로 명시적 형 변환
                     break;
                 case 1: // Move
-                    PenInputInjector.InjectPenMove(scaledX, scaledY, data.Pressure, data.IsBarrelPressed, data.TiltX, data.TiltY);
+                    PenInputInjector.InjectPenMove(scaledX, scaledY, data.Pressure, data.IsBarrelPressed,
+                        (int)data.TiltX, (int)data.TiltY); // <--- (int)로 명시적 형 변환
                     break;
                 case 2: // Up
                     PenInputInjector.InjectPenUp(scaledX, scaledY);
                     break;
                 case 3: // Hover
-                    PenInputInjector.InjectPenHover(scaledX, scaledY, data.IsBarrelPressed, data.TiltX, data.TiltY);
+                    PenInputInjector.InjectPenHover(scaledX, scaledY, data.IsBarrelPressed,
+                        (int)data.TiltX, (int)data.TiltY); // <--- (int)로 명시적 형 변환
                     break;
             }
         }
