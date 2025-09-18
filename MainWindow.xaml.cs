@@ -8,16 +8,16 @@ namespace TabletLink_WindowsApp
 {
     public partial class MainWindow : Window
     {
-        private readonly AdbManager adbManager = new AdbManager("TabletLink_WindowsApp");
         private UdpPenReceiver udpPenReceiver;
+        private UdpScreenSender udpScreenSender;
+
+        private const int PenPort = 9999;      // 펜 입력 포트 (A->PC)
+        private const int ScreenPort = 9998;   // 화면 전송 포트 (PC->A)
 
         private int androidDeviceWidth = 0;
         private int androidDeviceHeight = 0;
-
         private int monitorWidth = 0;
         private int monitorHeight = 0;
-
-        // For aspect ratio correction
         private float scale = 1.0f;
         private float offsetX = 0f;
         private float offsetY = 0f;
@@ -32,90 +32,64 @@ namespace TabletLink_WindowsApp
             }
             catch (Exception ex)
             {
-                Log($"ERROR: Failed to initialize PenInputInjector: {ex.Message}");
+                Logger.Log($"ERROR: Failed to initialize PenInputInjector: {ex.Message}");
                 MessageBox.Show($"Fatal Error: Could not initialize Pen Input.\n{ex.Message}\nThe application will now close.", "Initialization Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 Application.Current.Shutdown();
                 return;
             }
 
-            IsWiredConnection.Checked += ActivateWiredConnection_Checked;
-            IsWiredConnection.Unchecked += ActivateWiredConnection_Unchecked;
 
             udpPenReceiver = new UdpPenReceiver();
             udpPenReceiver.OnDeviceInfoReceived += UdpPenReceiver_OnDeviceInfoReceived;
             udpPenReceiver.OnPenDataReceived += UdpPenReceiver_OnPenDataReceived;
-            Log($"Local IP Address: {GetLocalIPAddress()}");
-            udpPenReceiver.StartListening(9999);
+            udpPenReceiver.OnConnectionLost += UdpPenReceiver_OnConnectionLost;
+
+            udpScreenSender = new UdpScreenSender(); // 화면 전송기 초기화
+
+            Logger.Log($"Local IP Address: {GetLocalIPAddress()}");
+            udpPenReceiver.StartListening(PenPort);
 
             StatusText.Text = "상태: 초기화 완료";
-            Log("Application started.");
-            Log("Listening for UDP packets on port 9999.");
-            Log("Waiting for device info...");
+            Logger.Log("Application started.");
+            Logger.Log($"Listening for Pen UDP packets on port {PenPort}.");
         }
 
-        private async void ActivateWiredConnection_Checked(object sender, RoutedEventArgs e)
-        {
-            if (!adbManager.IsAdbAvailable)
-            {
-                MessageBox.Show("ADB가 설치되어 있지 않습니다. 유선 연결을 사용할 수 없습니다.", "ADB Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
-                IsWiredConnection.IsChecked = false;
-                return;
-            }
-            bool success;
-            string msg;
-            (success, msg) = await adbManager.StartForwardingAsync(9999);
-            if (success)
-            {
-                StatusText.Text = "상태: 유선 연결 활성화됨";
-                Log($"ADB port forwarding started on port 9999. Message: {msg}");
-            }
-            else
-            {
-                StatusText.Text = "상태: 유선 연결 활성화 실패";
-                Log($"ERROR: {msg}");
-                IsWiredConnection.IsChecked = false;
-            }
-        }
-
-        private async void ActivateWiredConnection_Unchecked(object sender, RoutedEventArgs e)
-        {
-            if (!adbManager.IsAdbAvailable)
-            {
-                return;
-            }
-            bool success;
-            string msg;
-
-            (success, msg) = await adbManager.StopAllForwardingAsync();
-            if (success)
-            {
-                StatusText.Text = "상태: 유선 연결 비활성화됨";
-                Log($"ADB port forwarding stopped. Message: {msg}");
-            }
-            else
-            {
-                StatusText.Text = "상태: 유선 연결 비활성화 실패";
-                Log($"ERROR: {msg}");
-                IsWiredConnection.IsChecked = true;
-            }
-        }
-
-
-
-        private void UdpPenReceiver_OnDeviceInfoReceived(int width, int height)
+        private void UdpPenReceiver_OnDeviceInfoReceived(int width, int height, IPEndPoint androidEndpoint)
         {
             Dispatcher.Invoke(() =>
             {
                 androidDeviceWidth = width;
                 androidDeviceHeight = height;
-                Log($"[UDP] Device info received: {width} x {height}");
+                Logger.Log($"[UDP] Device info received: {width} x {height}");
                 CalculateMapping();
+                // 화면 전송 시작
+                // 안드로이드 기기의 IP 주소와 지정된 화면 포트로 EndPoint를 생성합니다.
+                var screenTargetEndpoint = new IPEndPoint(androidEndpoint.Address, ScreenPort);
+                udpScreenSender.StartStreaming(screenTargetEndpoint);
+
+                StatusText.Text = $"상태: 연결됨 ({androidEndpoint.Address})";
             });
         }
 
+        // 연결이 타임아웃 등으로 끊겼을 때 호출됩니다.
+        private void UdpPenReceiver_OnConnectionLost()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                Logger.Log("Connection to Android device lost.");
+                udpScreenSender.StopStreaming();
+                StatusText.Text = $"상태: 연결 끊김. 재연결 대기 중...\nPC IP: {GetLocalIPAddress()}";
+                androidDeviceWidth = 0;
+                androidDeviceHeight = 0;
+            });
+        }
+
+
         private void UdpPenReceiver_OnPenDataReceived(UdpPenData data)
         {
-            Log($"[UDP RECV] Action:{data.Action}, X:{data.X:F2}, Y:{data.Y:F2}, P:{data.Pressure:F2}, Barrel:{data.IsBarrelPressed}, TiltX:{data.TiltX}, TiltY:{data.TiltY}");
+            if (androidDeviceWidth == 0) return; // 아직 연결되지 않음
+
+            Logger.Log($"[UDP RECV] Action:{data.Action}, X:{data.X:F2}, Y:{data.Y:F2}, P:{data.Pressure:F2}, Barrel:{data.IsBarrelPressed}, TiltX:{data.TiltX}, TiltY:{data.TiltY}");
 
             int scaledX = (int)(data.X * scale + offsetX);
             int scaledY = (int)(data.Y * scale + offsetY);
@@ -142,17 +116,6 @@ namespace TabletLink_WindowsApp
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-
-            bool isReady = await adbManager.InitializeAsync();
-            if (isReady)
-            {
-                StatusText.Text = "상태: ADB 준비 완료";
-            }
-            else
-            {
-                StatusText.Text = "상태: ADB 초기화 실패. 수동 설치가 필요합니다.";
-            }
-
             GetMonitorInfo();
             CalculateMapping();
         }
@@ -173,50 +136,30 @@ namespace TabletLink_WindowsApp
                 monitorWidth = (int)SystemParameters.PrimaryScreenWidth;
                 monitorHeight = (int)SystemParameters.PrimaryScreenHeight;
             }
-            Log($"Monitor Resolution: {monitorWidth} x {monitorHeight}");
+            Logger.Log($"Monitor Resolution: {monitorWidth} x {monitorHeight}");
         }
 
         private void CalculateMapping()
         {
-            if (androidDeviceWidth == 0 || androidDeviceHeight == 0 || monitorWidth == 0 || monitorHeight == 0)
-            {
-                return;
-            }
+            if (androidDeviceWidth == 0 || androidDeviceHeight == 0 || monitorWidth == 0 || monitorHeight == 0) return;
 
             float monitorAspectRatio = (float)monitorWidth / monitorHeight;
             float tabletAspectRatio = (float)androidDeviceWidth / androidDeviceHeight;
 
             if (monitorAspectRatio > tabletAspectRatio)
             {
-                // Monitor is wider (letterbox)
                 scale = (float)monitorHeight / androidDeviceHeight;
-                float scaledTabletWidth = androidDeviceWidth * scale;
-                offsetX = (monitorWidth - scaledTabletWidth) / 2f;
+                offsetX = (monitorWidth - (androidDeviceWidth * scale)) / 2f;
                 offsetY = 0f;
             }
             else
             {
-                // Tablet is wider or same aspect ratio (pillarbox)
                 scale = (float)monitorWidth / androidDeviceWidth;
-                float scaledTabletHeight = androidDeviceHeight * scale;
+                offsetY = (monitorHeight - (androidDeviceHeight * scale)) / 2f;
                 offsetX = 0f;
-                offsetY = (monitorHeight - scaledTabletHeight) / 2f;
             }
+            Logger.Log($"Calculated Mapping: Scale={scale:F4}, OffsetX={offsetX:F2}, OffsetY={offsetY:F2}");
 
-            Log($"Calculated Mapping: Scale={scale:F4}, OffsetX={offsetX:F2}, OffsetY={offsetY:F2}");
-        }
-
-        private void Log(string message)
-        {
-            if (!Dispatcher.CheckAccess())
-            {
-                Dispatcher.InvokeAsync(() => Log(message));
-                return;
-            }
-            string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-            string formattedMessage = $"[{timestamp}] {message}\n";
-            //LogText.AppendText(formattedMessage);
-            Console.Write(formattedMessage); // Also write to console
         }
 
         private string GetLocalIPAddress()
@@ -230,7 +173,7 @@ namespace TabletLink_WindowsApp
             }
             catch (SocketException)
             {
-                return "Not found (no network)";
+                return "127.0.0.1";
             }
         }
 
@@ -238,7 +181,19 @@ namespace TabletLink_WindowsApp
         {
             PenInputInjector.Uninitialize();
             udpPenReceiver?.StopListening();
+            udpScreenSender?.StopStreaming();
+            Logger.Log("Application closing.");
         }
     }
 }
 
+public static class Logger
+{
+    public static void Log(string message)
+    {
+        string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+        string formattedMessage = $"[{timestamp}] {message}\n";
+        // 필요에 따라 로그 출력 위치를 수정하세요.
+        Console.Write(formattedMessage);
+    }
+}

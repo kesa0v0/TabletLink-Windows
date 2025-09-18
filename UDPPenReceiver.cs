@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -19,7 +20,7 @@ namespace TabletLink_WindowsApp
         /// Fired when device information (screen size) is received.
         /// Provides width and height.
         /// </summary>
-        public event Action<int, int> OnDeviceInfoReceived;
+        public event Action<int, int, IPEndPoint> OnDeviceInfoReceived;
 
         /// <summary>
         /// Fired when pen data is received.
@@ -27,7 +28,15 @@ namespace TabletLink_WindowsApp
         /// </summary>
         public event Action<UdpPenData> OnPenDataReceived;
 
+        /// <summary>
+        /// 연결이 끊겼을 때 발생합니다.
+        /// </summary>
+        public event Action OnConnectionLost;
+
+
         private IPEndPoint androidEndpoint;
+        private Timer heartbeatTimer;
+        private const int HeartbeatTimeout = 5000; // 5초
 
         // Packet type constants must match the client implementation.
         // Using byte for unsigned values 0-255.
@@ -50,6 +59,8 @@ namespace TabletLink_WindowsApp
             cancellationTokenSource = new CancellationTokenSource();
             var token = cancellationTokenSource.Token;
 
+            heartbeatTimer = new Timer(CheckHeartbeat, null, Timeout.Infinite, Timeout.Infinite);
+
             Task.Run(() => ListenLoop(token), token);
         }
 
@@ -60,6 +71,7 @@ namespace TabletLink_WindowsApp
         {
             cancellationTokenSource?.Cancel();
             udpClient?.Close();
+            heartbeatTimer?.Dispose();
         }
 
         private void ListenLoop(CancellationToken token)
@@ -74,7 +86,10 @@ namespace TabletLink_WindowsApp
                     if (androidEndpoint == null || !androidEndpoint.Equals(remoteEP))
                     {
                         androidEndpoint = remoteEP;
+                        Logger.Log($"New Android endpoint established: {androidEndpoint}");
                     }
+                    // 하트비트 타이머 리셋
+                    heartbeatTimer.Change(HeartbeatTimeout, Timeout.Infinite);
 
                     ProcessPacket(receivedBytes);
                 }
@@ -89,16 +104,20 @@ namespace TabletLink_WindowsApp
             }
         }
 
+        private void CheckHeartbeat(object state)
+        {
+            Logger.Log("Connection timed out.");
+            androidEndpoint = null;
+            OnConnectionLost?.Invoke();
+            heartbeatTimer.Change(Timeout.Infinite, Timeout.Infinite); // 타이머 비활성화
+        }
+
+
         private void ProcessPacket(byte[] data)
         {
             if (data.Length == 0) return;
 
             byte packetHeader = data[0];
-
-            // --- FIX ---
-            // Instead of checking the entire header byte (which includes flags),
-            // we now check only the lower 4 bits which represent the action type.
-            // 플래그가 포함된 전체 헤더 바이트 대신, 실제 액션 타입을 나타내는 하위 4비트만 확인하도록 수정합니다.
             byte actionType = (byte)(packetHeader & 0x0F);
 
             if (data.Length == 17 && actionType >= PACKET_TYPE_PEN_DATA_MIN && actionType <= PACKET_TYPE_PEN_DATA_MAX)
@@ -144,7 +163,7 @@ namespace TabletLink_WindowsApp
         {
             int width = BitConverter.ToInt32(data, 1);
             int height = BitConverter.ToInt32(data, 5);
-            OnDeviceInfoReceived?.Invoke(width, height);
+            OnDeviceInfoReceived?.Invoke(width, height, androidEndpoint);
         }
 
         private void SendControlPacket(byte packetType)
