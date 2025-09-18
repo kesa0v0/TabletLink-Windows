@@ -11,10 +11,8 @@
 		<StackPanel>
 			<TextBlock Text="서버 상태" FontSize="16" FontWeight="Bold"/>
 			<TextBlock x:Name="StatusText" Text="서버 시작 전..." Margin="0,5,0,0" FontSize="14"/>
-			<TextBlock Text="수신된 입력 데이터" FontSize="16" FontWeight="Bold" Margin="0,20,0,0"/>
-            <ScrollViewer x:Name="LogScrollViewer" Height="150" VerticalScrollBarVisibility="Auto">
-				<TextBlock x:Name="LogText" Text="" Margin="0,5,0,0" FontFamily="Consolas"/>
-			</ScrollViewer>
-		</StackPanel>
+            <TextBlock Text="설정" FontSize="16" FontWeight="Bold" Margin="0,20,0,0"/>
+            <CheckBox x:Name="IsWiredConnection" Content="유선 연결 활성화" Margin="0,5,0,0" FontSize="14"/>
+        </StackPanel>
 	</Grid>
 </Window>

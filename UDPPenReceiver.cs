@@ -68,7 +68,7 @@ namespace TabletLink_WindowsApp
             {
                 while (!token.IsCancellationRequested)
                 {
-                    IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, 0);
+                    IPEndPoint remoteEP = new(IPAddress.Any, 0);
                     byte[] receivedBytes = udpClient.Receive(ref remoteEP);
 
                     if (androidEndpoint == null || !androidEndpoint.Equals(remoteEP))
@@ -151,7 +151,7 @@ namespace TabletLink_WindowsApp
         {
             if (androidEndpoint == null) return;
 
-            byte[] packet = { packetType };
+            byte[] packet = [packetType];
             udpClient.Send(packet, packet.Length, androidEndpoint);
         }
     }

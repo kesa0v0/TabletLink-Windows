@@ -8,6 +8,7 @@ namespace TabletLink_WindowsApp
 {
     public partial class MainWindow : Window
     {
+        private readonly AdbManager adbManager = new AdbManager("TabletLink_WindowsApp");
         private UdpPenReceiver udpPenReceiver;
 
         private int androidDeviceWidth = 0;
@@ -37,12 +38,69 @@ namespace TabletLink_WindowsApp
                 return;
             }
 
+            IsWiredConnection.Checked += ActivateWiredConnection_Checked;
+            IsWiredConnection.Unchecked += ActivateWiredConnection_Unchecked;
+
             udpPenReceiver = new UdpPenReceiver();
             udpPenReceiver.OnDeviceInfoReceived += UdpPenReceiver_OnDeviceInfoReceived;
             udpPenReceiver.OnPenDataReceived += UdpPenReceiver_OnPenDataReceived;
             Log($"Local IP Address: {GetLocalIPAddress()}");
             udpPenReceiver.StartListening(9999);
+
+            StatusText.Text = "상태: 초기화 완료";
+            Log("Application started.");
+            Log("Listening for UDP packets on port 9999.");
+            Log("Waiting for device info...");
         }
+
+        private async void ActivateWiredConnection_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!adbManager.IsAdbAvailable)
+            {
+                MessageBox.Show("ADB가 설치되어 있지 않습니다. 유선 연결을 사용할 수 없습니다.", "ADB Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                IsWiredConnection.IsChecked = false;
+                return;
+            }
+            bool success;
+            string msg;
+            (success, msg) = await adbManager.StartForwardingAsync(9999);
+            if (success)
+            {
+                StatusText.Text = "상태: 유선 연결 활성화됨";
+                Log($"ADB port forwarding started on port 9999. Message: {msg}");
+            }
+            else
+            {
+                StatusText.Text = "상태: 유선 연결 활성화 실패";
+                Log($"ERROR: {msg}");
+                IsWiredConnection.IsChecked = false;
+            }
+        }
+
+        private async void ActivateWiredConnection_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (!adbManager.IsAdbAvailable)
+            {
+                return;
+            }
+            bool success;
+            string msg;
+
+            (success, msg) = await adbManager.StopAllForwardingAsync();
+            if (success)
+            {
+                StatusText.Text = "상태: 유선 연결 비활성화됨";
+                Log($"ADB port forwarding stopped. Message: {msg}");
+            }
+            else
+            {
+                StatusText.Text = "상태: 유선 연결 비활성화 실패";
+                Log($"ERROR: {msg}");
+                IsWiredConnection.IsChecked = true;
+            }
+        }
+
+
 
         private void UdpPenReceiver_OnDeviceInfoReceived(int width, int height)
         {
@@ -82,8 +140,19 @@ namespace TabletLink_WindowsApp
             }
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
+
+            bool isReady = await adbManager.InitializeAsync();
+            if (isReady)
+            {
+                StatusText.Text = "상태: ADB 준비 완료";
+            }
+            else
+            {
+                StatusText.Text = "상태: ADB 초기화 실패. 수동 설치가 필요합니다.";
+            }
+
             GetMonitorInfo();
             CalculateMapping();
         }
@@ -148,19 +217,16 @@ namespace TabletLink_WindowsApp
             string formattedMessage = $"[{timestamp}] {message}\n";
             //LogText.AppendText(formattedMessage);
             Console.Write(formattedMessage); // Also write to console
-            LogScrollViewer.ScrollToEnd();
         }
 
         private string GetLocalIPAddress()
         {
             try
             {
-                using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
-                {
-                    socket.Connect("8.8.8.8", 65530);
-                    IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
-                    return endPoint?.Address.ToString() ?? "Not found";
-                }
+                using Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0);
+                socket.Connect("8.8.8.8", 65530);
+                IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+                return endPoint?.Address.ToString() ?? "Not found";
             }
             catch (SocketException)
             {
